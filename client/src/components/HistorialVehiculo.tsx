@@ -58,7 +58,7 @@ export default function HistorialVehiculo() {
       <div>
         <h2 className="text-2xl font-bold text-gray-800">Historial Clínico de Vehículos</h2>
         <p className="text-gray-500 text-sm">
-          Consulte la hoja de vida de mantenimientos por número de placa o serie de cuadro[cite: 1]
+          Consulte la hoja de vida de mantenimientos por número de placa o serie de cuadro
         </p>
       </div>
 
@@ -108,15 +108,15 @@ export default function HistorialVehiculo() {
                       </span>
                     </div>
                     <p className="text-xs text-gray-500 mt-0.5">
-                      Color: {vehiculo.color} • Kilometraje registrado: {vehiculo.kilometraje_actual || 'N/A'}[cite: 1]
+                      Color: {vehiculo.color} • Kilometraje registrado: {vehiculo.kilometraje_actual || 'N/A'}
                     </p>
                   </div>
                 </div>
 
                 <div className="border-t md:border-t-0 md:border-l border-gray-200 pt-4 md:pt-0 md:pl-6 text-sm">
-                  <span className="text-xs font-bold text-gray-400 uppercase block">Propietario[cite: 1]</span>
-                  <p className="font-bold text-gray-800">{vehiculo.cliente?.nombre_completo}[cite: 1]</p>
-                  <p className="text-xs text-gray-500">{vehiculo.cliente?.telefono} • {vehiculo.cliente?.ciudad}[cite: 1]</p>
+                  <span className="text-xs font-bold text-gray-400 uppercase block">Propietario</span>
+                  <p className="font-bold text-gray-800">{vehiculo.cliente?.nombre_completo}</p>
+                  <p className="text-xs text-gray-500">{vehiculo.cliente?.telefono} • {vehiculo.cliente?.ciudad}</p>
                 </div>
               </div>
 
@@ -124,7 +124,7 @@ export default function HistorialVehiculo() {
               <div className="space-y-4">
                 <h4 className="text-sm font-bold text-gray-700 uppercase tracking-wider flex items-center gap-2">
                   <History className="w-4 h-4 text-red-600" />
-                  Mantenimientos Realizados ({ordenesHistorial.length})[cite: 1]
+                  Mantenimientos Realizados ({ordenesHistorial.length})
                 </h4>
 
                 {ordenesHistorial.length === 0 ? (
@@ -139,13 +139,13 @@ export default function HistorialVehiculo() {
                         <div className="flex justify-between items-center border-b border-gray-100 pb-3">
                           <div className="flex items-center gap-3">
                             <span className="font-bold text-sm bg-zinc-100 px-2.5 py-1 rounded text-zinc-800">
-                              {ot.numero_orden}[cite: 1]
+                              {ot.numero_orden}
                             </span>
                             <span className="text-xs text-gray-500 flex items-center gap-1">
-                              <Calendar className="w-3.5 h-3.5" /> {ot.fecha_ingreso}[cite: 1]
+                              <Calendar className="w-3.5 h-3.5" /> {ot.fecha_ingreso}
                             </span>
                             <span className="text-xs text-gray-600 font-medium">
-                              Servicio: {ot.tipo_servicio}[cite: 1]
+                              Servicio: {ot.tipo_servicio}
                             </span>
                           </div>
                           <span className="text-xs font-bold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full flex items-center gap-1">
@@ -155,31 +155,31 @@ export default function HistorialVehiculo() {
 
                         {ot.diagnostico_cliente && (
                           <div className="text-xs bg-gray-50 p-3 rounded-lg text-gray-700">
-                            <span className="font-bold">Diagnóstico / Motivo:</span> {ot.diagnostico_cliente}[cite: 1]
+                            <span className="font-bold">Diagnóstico / Motivo:</span> {ot.diagnostico_cliente}
                           </div>
                         )}
 
                         {/* Detalle de repuestos y manos de obra */}
                         <div className="text-xs">
                           <span className="font-bold text-gray-500 uppercase block mb-1">
-                            Repuestos y Trabajos Aplicados:[cite: 1]
+                            Repuestos y Trabajos Aplicados:
                           </span>
                           <ul className="grid grid-cols-1 md:grid-cols-2 gap-2">
                             {ot.orden_detalles?.map((det: any) => (
                               <li key={det.id} className="flex justify-between bg-zinc-50 px-3 py-1.5 rounded">
                                 <span className="text-gray-700">
-                                  {det.cantidad}x {det.descripcion}[cite: 1]
+                                  {det.cantidad}x {det.descripcion}
                                 </span>
-                                <span className="font-bold text-gray-900">${Number(det.subtotal).toFixed(2)}[cite: 1]</span>
+                                <span className="font-bold text-gray-900">${Number(det.subtotal).toFixed(2)}</span>
                               </li>
                             ))}
                           </ul>
                         </div>
 
                         <div className="flex justify-end gap-4 text-xs pt-2 border-t border-gray-100">
-                          <span className="text-gray-500">Mano de Obra: ${Number(ot.total_mano_obra || 0).toFixed(2)}[cite: 1]</span>
-                          <span className="text-gray-500">Repuestos: ${Number(ot.total_repuestos || 0).toFixed(2)}[cite: 1]</span>
-                          <span className="font-bold text-red-600 text-sm">Total: ${Number(ot.total || 0).toFixed(2)}[cite: 1]</span>
+                          <span className="text-gray-500">Mano de Obra: ${Number(ot.total_mano_obra || 0).toFixed(2)}</span>
+                          <span className="text-gray-500">Repuestos: ${Number(ot.total_repuestos || 0).toFixed(2)}</span>
+                          <span className="font-bold text-red-600 text-sm">Total: ${Number(ot.total || 0).toFixed(2)}</span>
                         </div>
                       </div>
                     ))}

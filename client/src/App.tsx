@@ -1,16 +1,18 @@
 import { useState, useEffect, useMemo } from 'react';
 import { 
   ClipboardList, Package, Plus, Search, RefreshCw, Eye, History, 
-  Bike, Wrench, AlertTriangle, LayoutGrid, Table, Layers, Zap, Disc, Fuel, Wind
+  Bike, Wrench, AlertTriangle, LayoutGrid, Table, Layers, Zap, Disc, Fuel, Wind, Menu, X, Pencil
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import NuevaOrdenModal from './components/nuevaOrdenModal';
 import NuevoProductoModal from './components/NuevoProductoModal';
 import DetalleOrdenModal from './components/DetalleOrdenModal';
+import EditarProductoModal from './components/EditarProductoModal';
 import HistorialVehiculo from './components/HistorialVehiculo';
 
 export default function App() {
   const [tab, setTab] = useState<'ordenes' | 'inventario' | 'historial'>('ordenes');
+  const [menuMovilAbierto, setMenuMovilAbierto] = useState(false);
   const [busqueda, setBusqueda] = useState('');
   const [filtroTipo, setFiltroTipo] = useState<string>('TODOS');
   const [filtroSubcat, setFiltroSubcat] = useState<string>('TODAS');
@@ -20,6 +22,7 @@ export default function App() {
   const [isNuevaOrdenOpen, setIsNuevaOrdenOpen] = useState(false);
   const [isNuevoProductoOpen, setIsNuevoProductoOpen] = useState(false);
   const [ordenSeleccionada, setOrdenSeleccionada] = useState<any | null>(null);
+  const [productoAEditar, setProductoAEditar] = useState<any | null>(null);
 
   const [cargando, setCargando] = useState(true);
   const [ordenes, setOrdenes] = useState<any[]>([]);
@@ -70,7 +73,6 @@ export default function App() {
     }
   };
 
-  // Subcategorías únicas disponibles
   const listaSubcategorias = useMemo(() => {
     const setSub = new Set<string>();
     inventario.forEach((item) => {
@@ -79,7 +81,6 @@ export default function App() {
     return Array.from(setSub).sort();
   }, [inventario]);
 
-  // Filtrado de Inventario
   const inventarioFiltrado = useMemo(() => {
     return inventario.filter((item) => {
       const matchText =
@@ -89,21 +90,18 @@ export default function App() {
 
       if (!matchText) return false;
 
-      // Filtro nivel 1
       if (filtroTipo === 'SERVICIOS' && item.tipo !== 'Servicio') return false;
       if (filtroTipo === 'CRITICO' && (item.tipo !== 'Producto' || item.stock_actual > item.stock_minimo)) return false;
       if (filtroTipo !== 'TODOS' && filtroTipo !== 'SERVICIOS' && filtroTipo !== 'CRITICO') {
         if (item.categoria_vehiculo !== filtroTipo) return false;
       }
 
-      // Filtro nivel 2 (Subcategoría)
       if (filtroSubcat !== 'TODAS' && item.subcategoria !== filtroSubcat) return false;
 
       return true;
     });
   }, [inventario, busqueda, filtroTipo, filtroSubcat]);
 
-  // Agrupamiento por subcategorías
   const gruposInventario = useMemo(() => {
     const mapa: { [key: string]: any[] } = {};
     inventarioFiltrado.forEach((item) => {
@@ -130,11 +128,41 @@ export default function App() {
     }
   };
 
+  const cambiarTab = (nuevaTab: 'ordenes' | 'inventario' | 'historial') => {
+    setTab(nuevaTab);
+    setMenuMovilAbierto(false);
+  };
+
   return (
-    <div className="min-h-screen bg-gray-100 flex print:bg-white font-sans">
-      {/* Barra Lateral */}
-      <aside className="w-64 bg-zinc-900 text-white flex flex-col print:hidden flex-shrink-0">
-        <div className="p-4 border-b border-zinc-800 flex items-center gap-3">
+    <div className="min-h-screen bg-gray-100 flex flex-col md:flex-row print:bg-white font-sans">
+      {/* Header móvil */}
+      <header className="md:hidden bg-zinc-900 text-white p-4 flex justify-between items-center sticky top-0 z-30 print:hidden">
+        <div className="flex items-center gap-2">
+          <img src="/logoZona.jpg" alt="Logo" className="w-8 h-8 object-contain rounded bg-zinc-800 p-0.5" />
+          <span className="font-black tracking-wider text-sm">ZONA RACING</span>
+        </div>
+        <button
+          onClick={() => setMenuMovilAbierto(!menuMovilAbierto)}
+          className="p-2 text-zinc-300 hover:text-white"
+        >
+          {menuMovilAbierto ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+        </button>
+      </header>
+
+      {/* Backdrop */}
+      {menuMovilAbierto && (
+        <div 
+          onClick={() => setMenuMovilAbierto(false)} 
+          className="fixed inset-0 bg-black/60 z-30 md:hidden"
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside className={`
+        fixed md:static inset-y-0 left-0 z-40 w-64 bg-zinc-900 text-white flex flex-col print:hidden flex-shrink-0 transition-transform duration-200
+        ${menuMovilAbierto ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+      `}>
+        <div className="p-4 border-b border-zinc-800 hidden md:flex items-center gap-3">
           <img
             src="/logoZona.jpg"
             alt="Logo Zona Racing"
@@ -148,7 +176,7 @@ export default function App() {
 
         <nav className="flex-1 p-4 space-y-2">
           <button
-            onClick={() => setTab('ordenes')}
+            onClick={() => cambiarTab('ordenes')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition cursor-pointer ${
               tab === 'ordenes' ? 'bg-red-600 text-white shadow-md' : 'text-zinc-400 hover:bg-zinc-800'
             }`}
@@ -157,7 +185,7 @@ export default function App() {
             Órdenes de Trabajo
           </button>
           <button
-            onClick={() => setTab('inventario')}
+            onClick={() => cambiarTab('inventario')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition cursor-pointer ${
               tab === 'inventario' ? 'bg-red-600 text-white shadow-md' : 'text-zinc-400 hover:bg-zinc-800'
             }`}
@@ -166,7 +194,7 @@ export default function App() {
             Inventario / Catálogo
           </button>
           <button
-            onClick={() => setTab('historial')}
+            onClick={() => cambiarTab('historial')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition cursor-pointer ${
               tab === 'historial' ? 'bg-red-600 text-white shadow-md' : 'text-zinc-400 hover:bg-zinc-800'
             }`}
@@ -177,16 +205,16 @@ export default function App() {
         </nav>
       </aside>
 
-      {/* Contenedor Principal */}
-      <main className="flex-1 p-8 overflow-y-auto print:p-0">
+      {/* Main Content */}
+      <main className="flex-1 p-4 md:p-8 overflow-y-auto print:p-0">
         {tab === 'ordenes' && (
           <div>
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6">
               <div>
-                <h2 className="text-2xl font-bold text-gray-800">Órdenes de Trabajo</h2>
-                <p className="text-gray-500 text-sm">Control de recepciones y mantenimientos en taller</p>
+                <h2 className="text-xl md:text-2xl font-bold text-gray-800">Órdenes de Trabajo</h2>
+                <p className="text-gray-500 text-xs md:text-sm">Control de recepciones y mantenimientos en taller</p>
               </div>
-              <div className="flex gap-3">
+              <div className="flex gap-2">
                 <button
                   onClick={handleRefrescarTodo}
                   className="p-2.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 cursor-pointer bg-white"
@@ -196,10 +224,10 @@ export default function App() {
                 </button>
                 <button
                   onClick={() => setIsNuevaOrdenOpen(true)}
-                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg font-medium shadow-sm transition cursor-pointer"
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg font-medium shadow-sm transition cursor-pointer text-sm"
                 >
                   <Plus className="w-5 h-5" />
-                  Nueva Orden (Ficha)
+                  Nueva Orden
                 </button>
               </div>
             </div>
@@ -207,20 +235,20 @@ export default function App() {
             {cargando ? (
               <div className="text-center py-12 text-gray-500 text-sm">Cargando órdenes desde Supabase...</div>
             ) : ordenes.length === 0 ? (
-              <div className="bg-white rounded-xl border border-dashed border-gray-300 p-12 text-center text-gray-500">
-                No hay órdenes registradas. Haz clic en "Nueva Orden (Ficha)" para crear una.
+              <div className="bg-white rounded-xl border border-dashed border-gray-300 p-12 text-center text-gray-500 text-sm">
+                No hay órdenes registradas. Haz clic en "Nueva Orden" para crear una.
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {ordenes.map((ot: any) => (
                   <div
                     key={ot.id}
                     onClick={() => setOrdenSeleccionada(ot)}
-                    className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 flex flex-col justify-between hover:border-red-400 hover:shadow-md transition cursor-pointer"
+                    className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-5 flex flex-col justify-between hover:border-red-400 hover:shadow-md transition cursor-pointer"
                   >
                     <div>
                       <div className="flex justify-between items-start mb-3">
-                        <span className="text-xs font-bold bg-zinc-100 text-zinc-700 px-2.5 py-1 rounded">
+                        <span className="text-xs font-bold bg-zinc-100 text-zinc-700 px-2 py-0.5 rounded">
                           {ot.numero_orden}
                         </span>
                         <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${getBadgeColor(ot.estado)}`}>
@@ -228,7 +256,7 @@ export default function App() {
                         </span>
                       </div>
 
-                      <h3 className="font-bold text-gray-800 text-lg">{ot.cliente?.nombre_completo || 'Cliente'}</h3>
+                      <h3 className="font-bold text-gray-800 text-base md:text-lg">{ot.cliente?.nombre_completo || 'Cliente'}</h3>
                       <p className="text-xs text-gray-500 mb-3">{ot.cliente?.telefono} • {ot.cliente?.ciudad}</p>
 
                       <div className="bg-gray-50 p-3 rounded-lg flex items-center gap-3 text-sm text-gray-700 mb-3">
@@ -250,7 +278,7 @@ export default function App() {
 
                     <div className="border-t border-gray-100 pt-3 flex justify-between items-center text-sm">
                       <div>
-                        <span className="text-xs text-gray-400 block">Saldo pendiente</span>
+                        <span className="text-[10px] text-gray-400 block">Saldo pendiente</span>
                         <span className="font-bold text-red-600">
                           ${Number(ot.saldo || 0).toFixed(2)}
                         </span>
@@ -268,57 +296,54 @@ export default function App() {
 
         {tab === 'inventario' && (
           <div className="space-y-6">
-            {/* Cabecera y Botón Nuevo */}
-            <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
               <div>
-                <h2 className="text-2xl font-bold text-gray-800">Inventario y Catálogo ({inventarioFiltrado.length} ítems)</h2>
-                <p className="text-gray-500 text-sm">Repuestos organizados por sistema, subcategoría y disponibilidad</p>
+                <h2 className="text-xl md:text-2xl font-bold text-gray-800">Inventario y Catálogo ({inventarioFiltrado.length})</h2>
+                <p className="text-gray-500 text-xs md:text-sm">Repuestos organizados por subcategoría</p>
               </div>
               <button
                 onClick={() => setIsNuevoProductoOpen(true)}
-                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg font-bold text-sm transition shadow-sm cursor-pointer w-fit"
+                className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-bold text-sm transition shadow-sm cursor-pointer"
               >
                 <Plus className="w-5 h-5" /> Agregar Repuesto
               </button>
             </div>
 
-            {/* Métricas Resumen */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+            {/* Métricas */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="bg-white p-3.5 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-bold text-gray-400 uppercase">Productos Registrados</p>
-                  <p className="text-2xl font-black text-gray-900">{inventario.length}</p>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase">Productos</p>
+                  <p className="text-xl font-black text-gray-900">{inventario.length}</p>
                 </div>
-                <Package className="w-8 h-8 text-zinc-400" />
+                <Package className="w-6 h-6 text-zinc-400" />
               </div>
-              <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+              <div className="bg-white p-3.5 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-bold text-gray-400 uppercase">Unidades Físicas</p>
-                  <p className="text-2xl font-black text-emerald-600">{totalItems} u.</p>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase">Unidades en Stock</p>
+                  <p className="text-xl font-black text-emerald-600">{totalItems} u.</p>
                 </div>
-                <Wrench className="w-8 h-8 text-emerald-400" />
+                <Wrench className="w-6 h-6 text-emerald-400" />
               </div>
-              <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+              <div className="bg-white p-3.5 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-bold text-gray-400 uppercase">Stock Crítico / Mínimo</p>
-                  <p className="text-2xl font-black text-red-600">{totalBajoStock} ítems</p>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase">Stock Crítico</p>
+                  <p className="text-xl font-black text-red-600">{totalBajoStock} ítems</p>
                 </div>
-                <AlertTriangle className="w-8 h-8 text-red-500" />
+                <AlertTriangle className="w-6 h-6 text-red-500" />
               </div>
             </div>
 
-            {/* Barra de Filtros y Búsqueda */}
-            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-4">
-              <div className="flex flex-col md:flex-row justify-between gap-3">
-                {/* Nivel 1: Filtro de Categoría General */}
-                <div className="flex flex-wrap gap-2">
+            {/* Filtros */}
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-3">
+              <div className="flex flex-col sm:flex-row justify-between gap-3">
+                <div className="flex flex-wrap gap-1.5">
                   {[
                     { id: 'TODOS', label: 'Todos' },
                     { id: 'Motocicleta', label: 'Motos' },
-                    { id: 'Bicicleta', label: 'Bicicletas' },
-                    { id: 'Universal', label: 'Universal' },
-                    { id: 'SERVICIOS', label: 'Mano de Obra' },
-                    { id: 'CRITICO', label: '⚠️ Stock Bajo' },
+                    { id: 'Bicicleta', label: 'Bicis' },
+                    { id: 'SERVICIOS', label: 'Mano Obra' },
+                    { id: 'CRITICO', label: '⚠️ Bajo' },
                   ].map((tipo) => (
                     <button
                       key={tipo.id}
@@ -326,10 +351,8 @@ export default function App() {
                         setFiltroTipo(tipo.id);
                         setFiltroSubcat('TODAS');
                       }}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                        filtroTipo === tipo.id
-                          ? 'bg-red-600 text-white shadow-sm'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        filtroTipo === tipo.id ? 'bg-red-600 text-white shadow-sm' : 'bg-gray-100 text-gray-600'
                       }`}
                     >
                       {tipo.label}
@@ -337,44 +360,36 @@ export default function App() {
                   ))}
                 </div>
 
-                {/* Controles de Búsqueda y Vista */}
                 <div className="flex items-center gap-2">
-                  <div className="relative flex-1 sm:w-60">
+                  <div className="relative flex-1 sm:w-56">
                     <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
                     <input
                       type="text"
-                      placeholder="Buscar por SKU o nombre..."
+                      placeholder="Buscar SKU o nombre..."
                       value={busqueda}
                       onChange={(e) => setBusqueda(e.target.value)}
-                      className="w-full pl-9 pr-3 py-1.5 border border-gray-300 rounded-lg text-xs bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                      className="w-full pl-9 pr-3 py-1.5 border border-gray-300 rounded-lg text-xs bg-gray-50 focus:bg-white focus:outline-none"
                     />
                   </div>
-
-                  {/* Toggle para agrupar por subcategoría */}
                   <button
                     onClick={() => setAgruparPorSubcat(!agruparPorSubcat)}
-                    className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
                       agruparPorSubcat ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-700 border-gray-300'
                     }`}
                     title="Agrupar por Subcategorías"
                   >
                     <Layers className="w-3.5 h-3.5" />
-                    Agrupar
                   </button>
-
-                  {/* Toggle Tarjeta / Tabla */}
                   <div className="flex border border-gray-300 rounded-lg overflow-hidden bg-gray-50">
                     <button
                       onClick={() => setVistaInventario('tarjetas')}
-                      className={`p-1.5 transition cursor-pointer ${vistaInventario === 'tarjetas' ? 'bg-white shadow-sm text-red-600' : 'text-gray-400'}`}
-                      title="Vista en Tarjetas"
+                      className={`p-1.5 ${vistaInventario === 'tarjetas' ? 'bg-white text-red-600' : 'text-gray-400'}`}
                     >
                       <LayoutGrid className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => setVistaInventario('tabla')}
-                      className={`p-1.5 transition cursor-pointer ${vistaInventario === 'tabla' ? 'bg-white shadow-sm text-red-600' : 'text-gray-400'}`}
-                      title="Vista en Tabla"
+                      className={`p-1.5 ${vistaInventario === 'tabla' ? 'bg-white text-red-600' : 'text-gray-400'}`}
                     >
                       <Table className="w-4 h-4" />
                     </button>
@@ -382,213 +397,146 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Nivel 2: Píldoras de Subcategoría (Transmisión, Sistema Eléctrico, etc.) */}
+              {/* Subcategorías */}
               <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-gray-100 text-xs">
-                <span className="text-[11px] font-bold text-gray-400 mr-1 uppercase">Subcategorías:</span>
                 <button
                   onClick={() => setFiltroSubcat('TODAS')}
-                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
-                    filtroSubcat === 'TODAS'
-                      ? 'bg-zinc-800 text-white'
-                      : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold ${
+                    filtroSubcat === 'TODAS' ? 'bg-zinc-800 text-white' : 'bg-zinc-100 text-zinc-600'
                   }`}
                 >
                   Todas ({inventario.length})
                 </button>
-                {listaSubcategorias.map((sub) => {
-                  const count = inventario.filter((i) => i.subcategoria === sub).length;
-                  return (
-                    <button
-                      key={sub}
-                      onClick={() => setFiltroSubcat(sub)}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
-                        filtroSubcat === sub
-                          ? 'bg-zinc-800 text-white'
-                          : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-                      }`}
-                    >
-                      {getSubcatIcon(sub)}
-                      <span>{sub}</span>
-                      <span className="text-[10px] opacity-75 font-mono">({count})</span>
-                    </button>
-                  );
-                })}
+                {listaSubcategorias.map((sub) => (
+                  <button
+                    key={sub}
+                    onClick={() => setFiltroSubcat(sub)}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold ${
+                      filtroSubcat === sub ? 'bg-zinc-800 text-white' : 'bg-zinc-100 text-zinc-600'
+                    }`}
+                  >
+                    {getSubcatIcon(sub)}
+                    <span>{sub}</span>
+                  </button>
+                ))}
               </div>
             </div>
 
-            {/* Visualización de Datos */}
+            {/* Listado de Inventario */}
             {agruparPorSubcat ? (
-              <div className="space-y-8">
+              <div className="space-y-6">
                 {Object.keys(gruposInventario).map((subcatName) => (
-                  <div key={subcatName} className="space-y-3">
-                    <div className="flex items-center gap-2 border-b-2 border-zinc-200 pb-2">
+                  <div key={subcatName} className="space-y-2">
+                    <div className="flex items-center gap-2 border-b border-zinc-200 pb-1.5">
                       {getSubcatIcon(subcatName)}
-                      <h3 className="text-base font-black text-zinc-900 uppercase tracking-wide">
-                        {subcatName}
-                      </h3>
-                      <span className="text-xs bg-zinc-200 text-zinc-800 font-bold px-2 py-0.5 rounded-full">
+                      <h3 className="text-sm font-black text-zinc-900 uppercase">{subcatName}</h3>
+                      <span className="text-[10px] bg-zinc-200 text-zinc-800 font-bold px-1.5 py-0.2 rounded-full">
                         {gruposInventario[subcatName].length}
                       </span>
                     </div>
 
-                    {vistaInventario === 'tarjetas' ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {gruposInventario[subcatName].map((prod) => (
-                          <div
-                            key={prod.id}
-                            className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex flex-col justify-between hover:border-red-400 transition"
-                          >
-                            <div>
-                              <div className="flex justify-between items-start mb-2">
-                                <span className="font-mono text-[11px] font-bold text-zinc-500 bg-gray-100 px-2 py-0.5 rounded">
-                                  {prod.codigo_sku}
-                                </span>
-                                <span className="text-[10px] font-semibold text-gray-500">
-                                  {prod.categoria_vehiculo}
-                                </span>
-                              </div>
-
-                              <h4 className="font-bold text-gray-800 text-sm mb-1 leading-snug">{prod.nombre}</h4>
-                            </div>
-
-                            <div className="border-t border-gray-100 pt-3 flex justify-between items-end mt-2">
-                              <div>
-                                <span className="text-[10px] text-gray-400 block">Existencias</span>
-                                {prod.tipo === 'Servicio' ? (
-                                  <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">Servicio</span>
-                                ) : (
-                                  <span
-                                    className={`text-xs font-bold px-2 py-0.5 rounded ${
-                                      prod.stock_actual <= prod.stock_minimo
-                                        ? 'bg-red-100 text-red-700 font-black'
-                                        : 'bg-green-100 text-green-700'
-                                    }`}
-                                  >
-                                    {prod.stock_actual} u.
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-right">
-                                <span className="text-[10px] text-gray-400 block">P. Venta</span>
-                                <span className="text-lg font-black text-gray-900">
-                                  ${Number(prod.precio_venta).toFixed(2)}
-                                </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                      {gruposInventario[subcatName].map((prod) => (
+                        <div key={prod.id} className="bg-white rounded-xl border border-gray-200 p-3.5 shadow-sm flex flex-col justify-between">
+                          <div>
+                            <div className="flex justify-between items-start mb-1.5">
+                              <span className="font-mono text-[10px] font-bold text-zinc-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                                {prod.codigo_sku}
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-gray-500">{prod.categoria_vehiculo}</span>
+                                <button
+                                  onClick={() => setProductoAEditar(prod)}
+                                  className="p-1 text-zinc-400 hover:text-red-600 hover:bg-zinc-100 rounded transition"
+                                  title="Editar producto"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
                               </div>
                             </div>
+                            <h4 className="font-bold text-gray-800 text-xs mb-1">{prod.nombre}</h4>
                           </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                        <table className="w-full text-left text-xs text-gray-600">
-                          <thead className="bg-gray-50 text-gray-700 uppercase font-semibold border-b border-gray-200">
-                            <tr>
-                              <th className="px-4 py-2.5">SKU</th>
-                              <th className="px-4 py-2.5">Descripción</th>
-                              <th className="px-4 py-2.5">Categoría</th>
-                              <th className="px-4 py-2.5 text-center">Stock</th>
-                              <th className="px-4 py-2.5 text-right">P. Venta</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100">
-                            {gruposInventario[subcatName].map((item) => (
-                              <tr key={item.id} className="hover:bg-gray-50">
-                                <td className="px-4 py-2 font-mono text-zinc-500">{item.codigo_sku}</td>
-                                <td className="px-4 py-2 font-medium text-gray-800">{item.nombre}</td>
-                                <td className="px-4 py-2">{item.categoria_vehiculo}</td>
-                                <td className="px-4 py-2 text-center">
-                                  <span
-                                    className={`px-2 py-0.5 rounded-full font-bold ${
-                                      item.stock_actual <= item.stock_minimo
-                                        ? 'bg-red-100 text-red-700'
-                                        : 'bg-green-100 text-green-700'
-                                    }`}
-                                  >
-                                    {item.tipo === 'Servicio' ? 'N/A' : `${item.stock_actual} u.`}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-2 text-right font-black text-gray-900">
-                                  ${Number(item.precio_venta).toFixed(2)}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+
+                          <div className="border-t border-gray-100 pt-2 flex justify-between items-end mt-2">
+                            <div>
+                              <span className="text-[9px] text-gray-400 block">Stock</span>
+                              {prod.tipo === 'Servicio' ? (
+                                <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Servicio</span>
+                              ) : (
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                  prod.stock_actual <= prod.stock_minimo ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                                }`}>
+                                  {prod.stock_actual} u.
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-base font-black text-gray-900">${Number(prod.precio_venta).toFixed(2)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
             ) : (
-              /* Vista No Agrupada (Plana) */
               vistaInventario === 'tarjetas' ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                   {inventarioFiltrado.map((prod) => (
-                    <div
-                      key={prod.id}
-                      className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex flex-col justify-between hover:border-red-400 transition"
-                    >
+                    <div key={prod.id} className="bg-white rounded-xl border border-gray-200 p-3.5 shadow-sm flex flex-col justify-between">
                       <div>
-                        <div className="flex justify-between items-start mb-2">
-                          <span className="font-mono text-[11px] font-bold text-zinc-500 bg-gray-100 px-2 py-0.5 rounded">
+                        <div className="flex justify-between items-start mb-1.5">
+                          <span className="font-mono text-[10px] font-bold text-zinc-500 bg-gray-100 px-1.5 py-0.5 rounded">
                             {prod.codigo_sku}
                           </span>
-                          <span className="text-[10px] uppercase font-bold text-gray-500 bg-zinc-50 px-2 py-0.5 rounded border border-gray-100">
-                            {prod.subcategoria}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-gray-500">{prod.subcategoria}</span>
+                            <button
+                              onClick={() => setProductoAEditar(prod)}
+                              className="p-1 text-zinc-400 hover:text-red-600 hover:bg-zinc-100 rounded transition"
+                              title="Editar producto"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
-                        <h4 className="font-bold text-gray-800 text-sm mb-1 leading-snug">{prod.nombre}</h4>
-                        <p className="text-xs text-gray-400 mb-2">{prod.categoria_vehiculo}</p>
+                        <h4 className="font-bold text-gray-800 text-xs mb-1">{prod.nombre}</h4>
                       </div>
 
-                      <div className="border-t border-gray-100 pt-3 flex justify-between items-end">
-                        <div>
-                          <span className="text-[10px] text-gray-400 block">Stock</span>
-                          {prod.tipo === 'Servicio' ? (
-                            <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">Servicio</span>
-                          ) : (
-                            <span
-                              className={`text-xs font-bold px-2 py-0.5 rounded ${
-                                prod.stock_actual <= prod.stock_minimo
-                                  ? 'bg-red-100 text-red-700 font-black'
-                                  : 'bg-green-100 text-green-700'
-                              }`}
-                            >
-                              {prod.stock_actual} u.
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-right">
-                          <span className="text-[10px] text-gray-400 block">P. Venta</span>
-                          <span className="text-lg font-black text-gray-900">${Number(prod.precio_venta).toFixed(2)}</span>
-                        </div>
+                      <div className="border-t border-gray-100 pt-2 flex justify-between items-end mt-2">
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                          prod.stock_actual <= prod.stock_minimo ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                        }`}>
+                          {prod.stock_actual} u.
+                        </span>
+                        <span className="text-base font-black text-gray-900">${Number(prod.precio_venta).toFixed(2)}</span>
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                  <table className="w-full text-left text-sm text-gray-600">
-                    <thead className="bg-gray-50 text-gray-700 text-xs uppercase font-semibold border-b border-gray-200">
+                  <table className="w-full text-left text-xs text-gray-600">
+                    <thead className="bg-gray-50 text-gray-700 uppercase font-semibold border-b border-gray-200">
                       <tr>
-                        <th className="px-6 py-3">SKU</th>
-                        <th className="px-6 py-3">Descripción</th>
-                        <th className="px-6 py-3">Categoría</th>
-                        <th className="px-6 py-3">Subcategoría</th>
-                        <th className="px-6 py-3 text-center">Stock</th>
-                        <th className="px-6 py-3 text-right">Precio Venta</th>
+                        <th className="px-4 py-2.5">SKU</th>
+                        <th className="px-4 py-2.5">Descripción</th>
+                        <th className="px-4 py-2.5">Categoría</th>
+                        <th className="px-4 py-2.5">Subcategoría</th>
+                        <th className="px-4 py-2.5 text-center">Stock</th>
+                        <th className="px-4 py-2.5 text-right">P. Venta</th>
+                        <th className="px-4 py-2.5 text-center">Acciones</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {inventarioFiltrado.map((item: any) => (
                         <tr key={item.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 font-mono text-xs text-zinc-500">{item.codigo_sku}</td>
-                          <td className="px-6 py-4 font-medium text-gray-800">{item.nombre}</td>
-                          <td className="px-6 py-4">{item.categoria_vehiculo}</td>
-                          <td className="px-6 py-4 text-xs text-gray-500">{item.subcategoria || '-'}</td>
-                          <td className="px-6 py-4 text-center">
+                          <td className="px-4 py-2 font-mono text-zinc-500">{item.codigo_sku}</td>
+                          <td className="px-4 py-2 font-medium text-gray-800">{item.nombre}</td>
+                          <td className="px-4 py-2">{item.categoria_vehiculo}</td>
+                          <td className="px-4 py-2 text-zinc-500">{item.subcategoria || '-'}</td>
+                          <td className="px-4 py-2 text-center">
                             <span
-                              className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                              className={`px-2 py-0.5 rounded-full font-bold ${
                                 item.stock_actual <= item.stock_minimo
                                   ? 'bg-red-100 text-red-700'
                                   : 'bg-green-100 text-green-700'
@@ -597,8 +545,17 @@ export default function App() {
                               {item.tipo === 'Servicio' ? 'N/A' : `${item.stock_actual} u.`}
                             </span>
                           </td>
-                          <td className="px-6 py-4 text-right font-black text-gray-900">
+                          <td className="px-4 py-2 text-right font-black text-gray-900">
                             ${Number(item.precio_venta).toFixed(2)}
+                          </td>
+                          <td className="px-4 py-2 text-center">
+                            <button
+                              onClick={() => setProductoAEditar(item)}
+                              className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-zinc-100 rounded-lg transition"
+                              title="Editar producto"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -631,6 +588,13 @@ export default function App() {
         isOpen={!!ordenSeleccionada}
         onClose={() => setOrdenSeleccionada(null)}
         onOrdenActualizada={handleRefrescarTodo}
+      />
+
+      <EditarProductoModal
+        producto={productoAEditar}
+        isOpen={!!productoAEditar}
+        onClose={() => setProductoAEditar(null)}
+        onProductoActualizado={handleRefrescarTodo}
       />
     </div>
   );
