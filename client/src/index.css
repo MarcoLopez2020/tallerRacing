@@ -1,1 +1,32 @@
 @import "tailwindcss";
+
+@media print {
+  /* Ocultar absolutamente todo en el body al imprimir */
+  body * {
+    visibility: hidden;
+  }
+
+  /* Mostrar únicamente el contenedor de la ficha y sus elementos hijos */
+  #ficha-impresion,
+  #ficha-impresion * {
+    visibility: visible;
+  }
+
+  /* Posicionar la ficha en la esquina superior izquierda ocupando toda la hoja */
+  #ficha-impresion {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 20px;
+    background: white !important;
+    display: block !important;
+  }
+
+  /* Eliminar márgenes raros del navegador */
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+}

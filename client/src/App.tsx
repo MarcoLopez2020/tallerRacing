@@ -1,59 +1,148 @@
-import { useState, useEffect } from 'react';
-import { Wrench, Bike, ClipboardList, Package, Plus, Search } from 'lucide-react';
-import { INVENTARIO_INICIAL, ORDENES_EJEMPLO } from './mocks/mockData';
-import NuevaOrdenModal from './components/NuevaOrdenModal';
+import { useState, useEffect, useMemo } from 'react';
+import { 
+  ClipboardList, Package, Plus, Search, RefreshCw, Eye, History, 
+  Bike, Wrench, AlertTriangle, LayoutGrid, Table, Layers, Zap, Disc, Fuel, Wind, ShieldAlert
+} from 'lucide-react';
+import { supabase } from './lib/supabase';
+import NuevaOrdenModal from './components/nuevaOrdenModal';
+import NuevoProductoModal from './components/nuevoProductoModal';
+import DetalleOrdenModal from './components/DetalleOrdenModal';
+import HistorialVehiculo from './components/HistorialVehiculo';
 
 export default function App() {
-  const [tab, setTab] = useState<'ordenes' | 'inventario'>('ordenes');
+  const [tab, setTab] = useState<'ordenes' | 'inventario' | 'historial'>('ordenes');
   const [busqueda, setBusqueda] = useState('');
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [filtroTipo, setFiltroTipo] = useState<string>('TODOS');
+  const [filtroSubcat, setFiltroSubcat] = useState<string>('TODAS');
+  const [agruparPorSubcat, setAgruparPorSubcat] = useState<boolean>(true);
+  const [vistaInventario, setVistaInventario] = useState<'tarjetas' | 'tabla'>('tarjetas');
+  
+  const [isNuevaOrdenOpen, setIsNuevaOrdenOpen] = useState(false);
+  const [isNuevoProductoOpen, setIsNuevoProductoOpen] = useState(false);
+  const [ordenSeleccionada, setOrdenSeleccionada] = useState<any | null>(null);
 
-  // Inicializar estado con localStorage si existe, o usar datos mock
-  const [ordenes, setOrdenes] = useState(() => {
-    const guardadas = localStorage.getItem('zr_ordenes');
-    return guardadas ? JSON.parse(guardadas) : ORDENES_EJEMPLO;
-  });
+  const [cargando, setCargando] = useState(true);
+  const [ordenes, setOrdenes] = useState<any[]>([]);
+  const [inventario, setInventario] = useState<any[]>([]);
 
-  const [inventario, setInventario] = useState(() => {
-    const guardado = localStorage.getItem('zr_inventario');
-    return guardado ? JSON.parse(guardado) : INVENTARIO_INICIAL;
-  });
+  const fetchOrdenes = async () => {
+    setCargando(true);
+    const { data, error } = await supabase
+      .from('ordenes_trabajo')
+      .select(`
+        *,
+        cliente:clientes(nombre_completo, telefono, ciudad),
+        vehiculo:vehiculos(tipo_vehiculo, marca, modelo, color, identificador)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (!error && data) setOrdenes(data);
+    setCargando(false);
+  };
+
+  const fetchInventario = async () => {
+    const { data, error } = await supabase
+      .from('productos')
+      .select('*')
+      .order('subcategoria', { ascending: true })
+      .order('nombre', { ascending: true });
+
+    if (!error && data) setInventario(data);
+  };
 
   useEffect(() => {
-    localStorage.setItem('zr_ordenes', JSON.stringify(ordenes));
-  }, [ordenes]);
+    fetchOrdenes();
+    fetchInventario();
+  }, []);
 
-  useEffect(() => {
-    localStorage.setItem('zr_inventario', JSON.stringify(inventario));
+  const handleRefrescarTodo = () => {
+    fetchOrdenes();
+    fetchInventario();
+  };
+
+  const getBadgeColor = (estado: string) => {
+    switch (estado) {
+      case 'Pendiente': return 'bg-yellow-100 text-yellow-800';
+      case 'En Proceso': return 'bg-blue-100 text-blue-800';
+      case 'Terminado': return 'bg-emerald-100 text-emerald-800';
+      case 'Entregado': return 'bg-zinc-100 text-zinc-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  // Subcategorías únicas disponibles
+  const listaSubcategorias = useMemo(() => {
+    const setSub = new Set<string>();
+    inventario.forEach((item) => {
+      if (item.subcategoria) setSub.add(item.subcategoria);
+    });
+    return Array.from(setSub).sort();
   }, [inventario]);
 
-  const handleGuardarOrden = (nuevaOrden: any) => {
-    // 1. Agregar la orden
-    setOrdenes([nuevaOrden, ...ordenes]);
+  // Filtrado de Inventario
+  const inventarioFiltrado = useMemo(() => {
+    return inventario.filter((item) => {
+      const matchText =
+        item.nombre?.toLowerCase().includes(busqueda.toLowerCase()) ||
+        item.codigo_sku?.toLowerCase().includes(busqueda.toLowerCase()) ||
+        item.subcategoria?.toLowerCase().includes(busqueda.toLowerCase());
 
-    // 2. Descontar stock de los repuestos utilizados automáticamente
-    nuevaOrden.items.forEach((item: any) => {
-      if (item.tipo === 'Repuesto') {
-        setInventario((prev: any[]) =>
-          prev.map((prod) =>
-            prod.nombre === item.descripcion
-              ? { ...prod, stock: Math.max(0, prod.stock - item.cantidad) }
-              : prod
-          )
-        );
+      if (!matchText) return false;
+
+      // Filtro nivel 1
+      if (filtroTipo === 'SERVICIOS' && item.tipo !== 'Servicio') return false;
+      if (filtroTipo === 'CRITICO' && (item.tipo !== 'Producto' || item.stock_actual > item.stock_minimo)) return false;
+      if (filtroTipo !== 'TODOS' && filtroTipo !== 'SERVICIOS' && filtroTipo !== 'CRITICO') {
+        if (item.categoria_vehiculo !== filtroTipo) return false;
       }
+
+      // Filtro nivel 2 (Subcategoría)
+      if (filtroSubcat !== 'TODAS' && item.subcategoria !== filtroSubcat) return false;
+
+      return true;
     });
+  }, [inventario, busqueda, filtroTipo, filtroSubcat]);
+
+  // Agrupamiento por subcategorías
+  const gruposInventario = useMemo(() => {
+    const mapa: { [key: string]: any[] } = {};
+    inventarioFiltrado.forEach((item) => {
+      const key = item.subcategoria || 'Varios / General';
+      if (!mapa[key]) mapa[key] = [];
+      mapa[key].push(item);
+    });
+    return mapa;
+  }, [inventarioFiltrado]);
+
+  const totalItems = inventario.filter((i) => i.tipo === 'Producto').reduce((acc, curr) => acc + (curr.stock_actual || 0), 0);
+  const totalBajoStock = inventario.filter((i) => i.tipo === 'Producto' && i.stock_actual <= i.stock_minimo).length;
+
+  const getSubcatIcon = (subcat: string) => {
+    switch (subcat) {
+      case 'Sistema Eléctrico': return <Zap className="w-4 h-4 text-amber-500" />;
+      case 'Transmisión': return <Disc className="w-4 h-4 text-orange-500" />;
+      case 'Motor': return <Wrench className="w-4 h-4 text-red-500" />;
+      case 'Lubricantes':
+      case 'Químicos': return <Fuel className="w-4 h-4 text-blue-500" />;
+      case 'Admisión':
+      case 'Combustible': return <Wind className="w-4 h-4 text-teal-500" />;
+      default: return <Package className="w-4 h-4 text-zinc-500" />;
+    }
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 flex">
+    <div className="min-h-screen bg-gray-100 flex print:bg-white font-sans">
       {/* Barra Lateral */}
-      <aside className="w-64 bg-zinc-900 text-white flex flex-col">
-        <div className="p-5 border-b border-zinc-800 flex items-center gap-3">
-          <Wrench className="text-red-500 w-7 h-7" />
+      <aside className="w-64 bg-zinc-900 text-white flex flex-col print:hidden flex-shrink-0">
+        <div className="p-4 border-b border-zinc-800 flex items-center gap-3">
+          <img
+            src="/logoZona.jpg"
+            alt="Logo Zona Racing"
+            className="w-10 h-10 object-contain rounded-lg bg-zinc-800 p-0.5"
+          />
           <div>
-            <h1 className="font-black text-lg tracking-wider">ZONA RACING</h1>
-            <p className="text-xs text-zinc-400">Motos y Bicicletas</p>
+            <h1 className="font-black text-lg tracking-wider leading-none">ZONA RACING</h1>
+            <p className="text-[11px] text-zinc-400 mt-1">Patate • Ecuador</p>
           </div>
         </div>
 
@@ -61,7 +150,7 @@ export default function App() {
           <button
             onClick={() => setTab('ordenes')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition cursor-pointer ${
-              tab === 'ordenes' ? 'bg-red-600 text-white' : 'text-zinc-400 hover:bg-zinc-800'
+              tab === 'ordenes' ? 'bg-red-600 text-white shadow-md' : 'text-zinc-400 hover:bg-zinc-800'
             }`}
           >
             <ClipboardList className="w-5 h-5" />
@@ -70,153 +159,478 @@ export default function App() {
           <button
             onClick={() => setTab('inventario')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition cursor-pointer ${
-              tab === 'inventario' ? 'bg-red-600 text-white' : 'text-zinc-400 hover:bg-zinc-800'
+              tab === 'inventario' ? 'bg-red-600 text-white shadow-md' : 'text-zinc-400 hover:bg-zinc-800'
             }`}
           >
             <Package className="w-5 h-5" />
-            Inventario / Repuestos
+            Inventario / Catálogo
+          </button>
+          <button
+            onClick={() => setTab('historial')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition cursor-pointer ${
+              tab === 'historial' ? 'bg-red-600 text-white shadow-md' : 'text-zinc-400 hover:bg-zinc-800'
+            }`}
+          >
+            <History className="w-5 h-5" />
+            Historial por Placa
           </button>
         </nav>
       </aside>
 
-      {/* Contenido Dinámico */}
-      <main className="flex-1 p-8 overflow-y-auto">
-        {tab === 'ordenes' ? (
+      {/* Contenedor Principal */}
+      <main className="flex-1 p-8 overflow-y-auto print:p-0">
+        {tab === 'ordenes' && (
           <div>
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h2 className="text-2xl font-bold text-gray-800">Órdenes de Trabajo</h2>
                 <p className="text-gray-500 text-sm">Control de recepciones y mantenimientos en taller</p>
               </div>
-              <button
-                onClick={() => setIsModalOpen(true)}
-                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg font-medium shadow-sm transition cursor-pointer"
-              >
-                <Plus className="w-5 h-5" />
-                Nueva Orden (Ficha)
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleRefrescarTodo}
+                  className="p-2.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 cursor-pointer bg-white"
+                  title="Recargar datos"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setIsNuevaOrdenOpen(true)}
+                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg font-medium shadow-sm transition cursor-pointer"
+                >
+                  <Plus className="w-5 h-5" />
+                  Nueva Orden (Ficha)
+                </button>
+              </div>
             </div>
 
-            {/* Listado de órdenes */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {ordenes.map((ot: any) => (
-                <div key={ot.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 flex flex-col justify-between">
-                  <div>
-                    <div className="flex justify-between items-start mb-3">
-                      <span className="text-xs font-bold bg-zinc-100 text-zinc-700 px-2.5 py-1 rounded">
-                        {ot.id}
-                      </span>
-                      <span className="text-xs font-semibold bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full">
-                        {ot.estado}
-                      </span>
+            {cargando ? (
+              <div className="text-center py-12 text-gray-500 text-sm">Cargando órdenes desde Supabase...</div>
+            ) : ordenes.length === 0 ? (
+              <div className="bg-white rounded-xl border border-dashed border-gray-300 p-12 text-center text-gray-500">
+                No hay órdenes registradas. Haz clic en "Nueva Orden (Ficha)" para crear una.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {ordenes.map((ot: any) => (
+                  <div
+                    key={ot.id}
+                    onClick={() => setOrdenSeleccionada(ot)}
+                    className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 flex flex-col justify-between hover:border-red-400 hover:shadow-md transition cursor-pointer"
+                  >
+                    <div>
+                      <div className="flex justify-between items-start mb-3">
+                        <span className="text-xs font-bold bg-zinc-100 text-zinc-700 px-2.5 py-1 rounded">
+                          {ot.numero_orden}
+                        </span>
+                        <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${getBadgeColor(ot.estado)}`}>
+                          {ot.estado}
+                        </span>
+                      </div>
+
+                      <h3 className="font-bold text-gray-800 text-lg">{ot.cliente?.nombre_completo || 'Cliente'}</h3>
+                      <p className="text-xs text-gray-500 mb-3">{ot.cliente?.telefono} • {ot.cliente?.ciudad}</p>
+
+                      <div className="bg-gray-50 p-3 rounded-lg flex items-center gap-3 text-sm text-gray-700 mb-3">
+                        {ot.vehiculo?.tipo_vehiculo === 'Motocicleta' ? (
+                          <Wrench className="w-4 h-4 text-red-500 flex-shrink-0" />
+                        ) : (
+                          <Bike className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                        )}
+                        <div>
+                          <p className="font-medium text-xs text-gray-800">
+                            {ot.vehiculo?.marca} {ot.vehiculo?.modelo} ({ot.vehiculo?.color})
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            Placa/Serie: {ot.vehiculo?.identificador}
+                          </p>
+                        </div>
+                      </div>
                     </div>
 
-                    <h3 className="font-bold text-gray-800 text-lg">{ot.cliente.nombre}</h3>
-                    <p className="text-xs text-gray-500 mb-3">{ot.cliente.telefono} • {ot.cliente.ciudad}</p>
-
-                    <div className="bg-gray-50 p-3 rounded-lg flex items-center gap-3 text-sm text-gray-700 mb-3">
-                      {ot.vehiculo.tipo === 'Motocicleta' ? (
-                        <Wrench className="w-4 h-4 text-red-500 flex-shrink-0" />
-                      ) : (
-                        <Bike className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                      )}
+                    <div className="border-t border-gray-100 pt-3 flex justify-between items-center text-sm">
                       <div>
-                        <p className="font-medium text-xs text-gray-800">
-                          {ot.vehiculo.marca} {ot.vehiculo.modelo} ({ot.vehiculo.color})
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          Placa/Serie: {ot.vehiculo.placa || ot.vehiculo.placaSerie}
-                        </p>
+                        <span className="text-xs text-gray-400 block">Saldo pendiente</span>
+                        <span className="font-bold text-red-600">
+                          ${Number(ot.saldo || 0).toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 text-xs font-bold text-zinc-600">
+                        <Eye className="w-3.5 h-3.5" /> Gestionar
                       </div>
                     </div>
                   </div>
-
-                  <div className="border-t border-gray-100 pt-3 flex justify-between items-center text-sm">
-                    <div>
-                      <span className="text-xs text-gray-400 block">Saldo pendiente</span>
-                      <span className="font-bold text-red-600">
-                        ${(ot.resumenCostos?.saldo ?? ot.saldo).toFixed(2)}
-                      </span>
-                    </div>
-                    <span className="text-xs text-zinc-500 font-medium">
-                      Total: ${(ot.resumenCostos?.total ?? ot.total).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div>
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h2 className="text-2xl font-bold text-gray-800">Inventario y Repuestos</h2>
-                <p className="text-gray-500 text-sm">Stock actual de lubricantes, refacciones y accesorios</p>
+                ))}
               </div>
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Buscar por repuesto o SKU..."
-                  value={busqueda}
-                  onChange={(e) => setBusqueda(e.target.value)}
-                  className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
-                />
-              </div>
-            </div>
-
-            {/* Tabla de Repuestos */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <table className="w-full text-left text-sm text-gray-600">
-                <thead className="bg-gray-50 text-gray-700 text-xs uppercase font-semibold border-b border-gray-200">
-                  <tr>
-                    <th className="px-6 py-3">SKU</th>
-                    <th className="px-6 py-3">Descripción</th>
-                    <th className="px-6 py-3">Categoría</th>
-                    <th className="px-6 py-3 text-center">Stock</th>
-                    <th className="px-6 py-3 text-right">Precio Venta</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {inventario
-                    .filter(
-                      (item: any) =>
-                        item.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-                        item.sku.toLowerCase().includes(busqueda.toLowerCase())
-                    )
-                    .map((item: any) => (
-                      <tr key={item.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 font-mono text-xs text-zinc-500">{item.sku}</td>
-                        <td className="px-6 py-4 font-medium text-gray-800">{item.nombre}</td>
-                        <td className="px-6 py-4">{item.categoria}</td>
-                        <td className="px-6 py-4 text-center">
-                          <span
-                            className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                              item.stock <= 3
-                                ? 'bg-red-100 text-red-700'
-                                : 'bg-green-100 text-green-700'
-                            }`}
-                          >
-                            {item.stock} u.
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-right font-semibold text-gray-800">
-                          ${item.precioVenta.toFixed(2)}
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
+            )}
           </div>
         )}
+
+        {tab === 'inventario' && (
+          <div className="space-y-6">
+            {/* Cabecera y Botón Nuevo */}
+            <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-800">Inventario y Catálogo ({inventarioFiltrado.length} ítems)</h2>
+                <p className="text-gray-500 text-sm">Repuestos organizados por sistema, subcategoría y disponibilidad</p>
+              </div>
+              <button
+                onClick={() => setIsNuevoProductoOpen(true)}
+                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg font-bold text-sm transition shadow-sm cursor-pointer w-fit"
+              >
+                <Plus className="w-5 h-5" /> Agregar Repuesto
+              </button>
+            </div>
+
+            {/* Métricas Resumen */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-gray-400 uppercase">Productos Registrados</p>
+                  <p className="text-2xl font-black text-gray-900">{inventario.length}</p>
+                </div>
+                <Package className="w-8 h-8 text-zinc-400" />
+              </div>
+              <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-gray-400 uppercase">Unidades Físicas</p>
+                  <p className="text-2xl font-black text-emerald-600">{totalItems} u.</p>
+                </div>
+                <Wrench className="w-8 h-8 text-emerald-400" />
+              </div>
+              <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-gray-400 uppercase">Stock Crítico / Mínimo</p>
+                  <p className="text-2xl font-black text-red-600">{totalBajoStock} ítems</p>
+                </div>
+                <AlertTriangle className="w-8 h-8 text-red-500" />
+              </div>
+            </div>
+
+            {/* Barra de Filtros y Búsqueda */}
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-4">
+              <div className="flex flex-col md:flex-row justify-between gap-3">
+                {/* Nivel 1: Filtro de Categoría General */}
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { id: 'TODOS', label: 'Todos' },
+                    { id: 'Motocicleta', label: 'Motos' },
+                    { id: 'Bicicleta', label: 'Bicicletas' },
+                    { id: 'Universal', label: 'Universal' },
+                    { id: 'SERVICIOS', label: 'Mano de Obra' },
+                    { id: 'CRITICO', label: '⚠️ Stock Bajo' },
+                  ].map((tipo) => (
+                    <button
+                      key={tipo.id}
+                      onClick={() => {
+                        setFiltroTipo(tipo.id);
+                        setFiltroSubcat('TODAS');
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        filtroTipo === tipo.id
+                          ? 'bg-red-600 text-white shadow-sm'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      {tipo.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Controles de Búsqueda y Vista */}
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1 sm:w-60">
+                    <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Buscar por SKU o nombre..."
+                      value={busqueda}
+                      onChange={(e) => setBusqueda(e.target.value)}
+                      className="w-full pl-9 pr-3 py-1.5 border border-gray-300 rounded-lg text-xs bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                    />
+                  </div>
+
+                  {/* Toggle para agrupar por subcategoría */}
+                  <button
+                    onClick={() => setAgruparPorSubcat(!agruparPorSubcat)}
+                    className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                      agruparPorSubcat ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-700 border-gray-300'
+                    }`}
+                    title="Agrupar por Subcategorías"
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    Agrupar
+                  </button>
+
+                  {/* Toggle Tarjeta / Tabla */}
+                  <div className="flex border border-gray-300 rounded-lg overflow-hidden bg-gray-50">
+                    <button
+                      onClick={() => setVistaInventario('tarjetas')}
+                      className={`p-1.5 transition cursor-pointer ${vistaInventario === 'tarjetas' ? 'bg-white shadow-sm text-red-600' : 'text-gray-400'}`}
+                      title="Vista en Tarjetas"
+                    >
+                      <LayoutGrid className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setVistaInventario('tabla')}
+                      className={`p-1.5 transition cursor-pointer ${vistaInventario === 'tabla' ? 'bg-white shadow-sm text-red-600' : 'text-gray-400'}`}
+                      title="Vista en Tabla"
+                    >
+                      <Table className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Nivel 2: Píldoras de Subcategoría (Transmisión, Sistema Eléctrico, etc.) */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-gray-100 text-xs">
+                <span className="text-[11px] font-bold text-gray-400 mr-1 uppercase">Subcategorías:</span>
+                <button
+                  onClick={() => setFiltroSubcat('TODAS')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
+                    filtroSubcat === 'TODAS'
+                      ? 'bg-zinc-800 text-white'
+                      : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+                  }`}
+                >
+                  Todas ({inventario.length})
+                </button>
+                {listaSubcategorias.map((sub) => {
+                  const count = inventario.filter((i) => i.subcategoria === sub).length;
+                  return (
+                    <button
+                      key={sub}
+                      onClick={() => setFiltroSubcat(sub)}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
+                        filtroSubcat === sub
+                          ? 'bg-zinc-800 text-white'
+                          : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+                      }`}
+                    >
+                      {getSubcatIcon(sub)}
+                      <span>{sub}</span>
+                      <span className="text-[10px] opacity-75 font-mono">({count})</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Visualización de Datos */}
+            {agruparPorSubcat ? (
+              <div className="space-y-8">
+                {Object.keys(gruposInventario).map((subcatName) => (
+                  <div key={subcatName} className="space-y-3">
+                    <div className="flex items-center gap-2 border-b-2 border-zinc-200 pb-2">
+                      {getSubcatIcon(subcatName)}
+                      <h3 className="text-base font-black text-zinc-900 uppercase tracking-wide">
+                        {subcatName}
+                      </h3>
+                      <span className="text-xs bg-zinc-200 text-zinc-800 font-bold px-2 py-0.5 rounded-full">
+                        {gruposInventario[subcatName].length}
+                      </span>
+                    </div>
+
+                    {vistaInventario === 'tarjetas' ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        {gruposInventario[subcatName].map((prod) => (
+                          <div
+                            key={prod.id}
+                            className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex flex-col justify-between hover:border-red-400 transition"
+                          >
+                            <div>
+                              <div className="flex justify-between items-start mb-2">
+                                <span className="font-mono text-[11px] font-bold text-zinc-500 bg-gray-100 px-2 py-0.5 rounded">
+                                  {prod.codigo_sku}
+                                </span>
+                                <span className="text-[10px] font-semibold text-gray-500">
+                                  {prod.categoria_vehiculo}
+                                </span>
+                              </div>
+
+                              <h4 className="font-bold text-gray-800 text-sm mb-1 leading-snug">{prod.nombre}</h4>
+                            </div>
+
+                            <div className="border-t border-gray-100 pt-3 flex justify-between items-end mt-2">
+                              <div>
+                                <span className="text-[10px] text-gray-400 block">Existencias</span>
+                                {prod.tipo === 'Servicio' ? (
+                                  <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">Servicio</span>
+                                ) : (
+                                  <span
+                                    className={`text-xs font-bold px-2 py-0.5 rounded ${
+                                      prod.stock_actual <= prod.stock_minimo
+                                        ? 'bg-red-100 text-red-700 font-black'
+                                        : 'bg-green-100 text-green-700'
+                                    }`}
+                                  >
+                                    {prod.stock_actual} u.
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-right">
+                                <span className="text-[10px] text-gray-400 block">P. Venta</span>
+                                <span className="text-lg font-black text-gray-900">
+                                  ${Number(prod.precio_venta).toFixed(2)}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                        <table className="w-full text-left text-xs text-gray-600">
+                          <thead className="bg-gray-50 text-gray-700 uppercase font-semibold border-b border-gray-200">
+                            <tr>
+                              <th className="px-4 py-2.5">SKU</th>
+                              <th className="px-4 py-2.5">Descripción</th>
+                              <th className="px-4 py-2.5">Categoría</th>
+                              <th className="px-4 py-2.5 text-center">Stock</th>
+                              <th className="px-4 py-2.5 text-right">P. Venta</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {gruposInventario[subcatName].map((item) => (
+                              <tr key={item.id} className="hover:bg-gray-50">
+                                <td className="px-4 py-2 font-mono text-zinc-500">{item.codigo_sku}</td>
+                                <td className="px-4 py-2 font-medium text-gray-800">{item.nombre}</td>
+                                <td className="px-4 py-2">{item.categoria_vehiculo}</td>
+                                <td className="px-4 py-2 text-center">
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full font-bold ${
+                                      item.stock_actual <= item.stock_minimo
+                                        ? 'bg-red-100 text-red-700'
+                                        : 'bg-green-100 text-green-700'
+                                    }`}
+                                  >
+                                    {item.tipo === 'Servicio' ? 'N/A' : `${item.stock_actual} u.`}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-2 text-right font-black text-gray-900">
+                                  ${Number(item.precio_venta).toFixed(2)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              /* Vista No Agrupada (Plana) */
+              vistaInventario === 'tarjetas' ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {inventarioFiltrado.map((prod) => (
+                    <div
+                      key={prod.id}
+                      className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex flex-col justify-between hover:border-red-400 transition"
+                    >
+                      <div>
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="font-mono text-[11px] font-bold text-zinc-500 bg-gray-100 px-2 py-0.5 rounded">
+                            {prod.codigo_sku}
+                          </span>
+                          <span className="text-[10px] uppercase font-bold text-gray-500 bg-zinc-50 px-2 py-0.5 rounded border border-gray-100">
+                            {prod.subcategoria}
+                          </span>
+                        </div>
+                        <h4 className="font-bold text-gray-800 text-sm mb-1 leading-snug">{prod.nombre}</h4>
+                        <p className="text-xs text-gray-400 mb-2">{prod.categoria_vehiculo}</p>
+                      </div>
+
+                      <div className="border-t border-gray-100 pt-3 flex justify-between items-end">
+                        <div>
+                          <span className="text-[10px] text-gray-400 block">Stock</span>
+                          {prod.tipo === 'Servicio' ? (
+                            <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">Servicio</span>
+                          ) : (
+                            <span
+                              className={`text-xs font-bold px-2 py-0.5 rounded ${
+                                prod.stock_actual <= prod.stock_minimo
+                                  ? 'bg-red-100 text-red-700 font-black'
+                                  : 'bg-green-100 text-green-700'
+                              }`}
+                            >
+                              {prod.stock_actual} u.
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[10px] text-gray-400 block">P. Venta</span>
+                          <span className="text-lg font-black text-gray-900">${Number(prod.precio_venta).toFixed(2)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                  <table className="w-full text-left text-sm text-gray-600">
+                    <thead className="bg-gray-50 text-gray-700 text-xs uppercase font-semibold border-b border-gray-200">
+                      <tr>
+                        <th className="px-6 py-3">SKU</th>
+                        <th className="px-6 py-3">Descripción</th>
+                        <th className="px-6 py-3">Categoría</th>
+                        <th className="px-6 py-3">Subcategoría</th>
+                        <th className="px-6 py-3 text-center">Stock</th>
+                        <th className="px-6 py-3 text-right">Precio Venta</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {inventarioFiltrado.map((item: any) => (
+                        <tr key={item.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 font-mono text-xs text-zinc-500">{item.codigo_sku}</td>
+                          <td className="px-6 py-4 font-medium text-gray-800">{item.nombre}</td>
+                          <td className="px-6 py-4">{item.categoria_vehiculo}</td>
+                          <td className="px-6 py-4 text-xs text-gray-500">{item.subcategoria || '-'}</td>
+                          <td className="px-6 py-4 text-center">
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                                item.stock_actual <= item.stock_minimo
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-green-100 text-green-700'
+                              }`}
+                            >
+                              {item.tipo === 'Servicio' ? 'N/A' : `${item.stock_actual} u.`}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-right font-black text-gray-900">
+                            ${Number(item.precio_venta).toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            )}
+          </div>
+        )}
+
+        {tab === 'historial' && <HistorialVehiculo />}
       </main>
 
-      {/* Modal Ficha Técnica */}
+      {/* Modales */}
       <NuevaOrdenModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onGuardar={handleGuardarOrden}
+        isOpen={isNuevaOrdenOpen}
+        onClose={() => setIsNuevaOrdenOpen(false)}
+        onOrdenCreada={handleRefrescarTodo}
+      />
+
+      <NuevoProductoModal
+        isOpen={isNuevoProductoOpen}
+        onClose={() => setIsNuevoProductoOpen(false)}
+        onProductoCreado={handleRefrescarTodo}
+      />
+
+      <DetalleOrdenModal
+        orden={ordenSeleccionada}
+        isOpen={!!ordenSeleccionada}
+        onClose={() => setOrdenSeleccionada(null)}
+        onOrdenActualizada={handleRefrescarTodo}
       />
     </div>
   );
