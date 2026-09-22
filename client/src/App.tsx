@@ -1,12 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
 import { 
   ClipboardList, Package, Plus, Search, RefreshCw, Eye, History, 
-  Bike, Wrench, AlertTriangle, LayoutGrid, Table, Layers, Zap, Disc, Fuel, Wind, Menu, X
+  Bike, Wrench, AlertTriangle, LayoutGrid, Table, Layers, Zap, Disc, Fuel, Wind, Menu, X, Pencil
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import NuevaOrdenModal from './components/nuevaOrdenModal';
 import NuevoProductoModal from './components/NuevoProductoModal';
 import DetalleOrdenModal from './components/DetalleOrdenModal';
+import EditarProductoModal from './components/EditarProductoModal';
 import HistorialVehiculo from './components/HistorialVehiculo';
 
 export default function App() {
@@ -21,6 +22,7 @@ export default function App() {
   const [isNuevaOrdenOpen, setIsNuevaOrdenOpen] = useState(false);
   const [isNuevoProductoOpen, setIsNuevoProductoOpen] = useState(false);
   const [ordenSeleccionada, setOrdenSeleccionada] = useState<any | null>(null);
+  const [productoAEditar, setProductoAEditar] = useState<any | null>(null);
 
   const [cargando, setCargando] = useState(true);
   const [ordenes, setOrdenes] = useState<any[]>([]);
@@ -133,7 +135,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col md:flex-row print:bg-white font-sans">
-      {/* Barra Superior Móvil */}
+      {/* Header móvil */}
       <header className="md:hidden bg-zinc-900 text-white p-4 flex justify-between items-center sticky top-0 z-30 print:hidden">
         <div className="flex items-center gap-2">
           <img src="/logoZona.jpg" alt="Logo" className="w-8 h-8 object-contain rounded bg-zinc-800 p-0.5" />
@@ -147,7 +149,7 @@ export default function App() {
         </button>
       </header>
 
-      {/* Backdrop para móvil */}
+      {/* Backdrop */}
       {menuMovilAbierto && (
         <div 
           onClick={() => setMenuMovilAbierto(false)} 
@@ -155,7 +157,7 @@ export default function App() {
         />
       )}
 
-      {/* Barra Lateral (Desktop fija, Móvil desplegable) */}
+      {/* Sidebar */}
       <aside className={`
         fixed md:static inset-y-0 left-0 z-40 w-64 bg-zinc-900 text-white flex flex-col print:hidden flex-shrink-0 transition-transform duration-200
         ${menuMovilAbierto ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
@@ -203,7 +205,7 @@ export default function App() {
         </nav>
       </aside>
 
-      {/* Contenedor Principal */}
+      {/* Main Content */}
       <main className="flex-1 p-4 md:p-8 overflow-y-auto print:p-0">
         {tab === 'ordenes' && (
           <div>
@@ -332,7 +334,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Controles y Búsqueda */}
+            {/* Filtros */}
             <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-3">
               <div className="flex flex-col sm:flex-row justify-between gap-3">
                 <div className="flex flex-wrap gap-1.5">
@@ -374,6 +376,7 @@ export default function App() {
                     className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
                       agruparPorSubcat ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-700 border-gray-300'
                     }`}
+                    title="Agrupar por Subcategorías"
                   >
                     <Layers className="w-3.5 h-3.5" />
                   </button>
@@ -394,7 +397,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Píldoras de Subcategorías */}
+              {/* Subcategorías */}
               <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-gray-100 text-xs">
                 <button
                   onClick={() => setFiltroSubcat('TODAS')}
@@ -419,7 +422,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Listado / Agrupado */}
+            {/* Listado de Inventario */}
             {agruparPorSubcat ? (
               <div className="space-y-6">
                 {Object.keys(gruposInventario).map((subcatName) => (
@@ -440,7 +443,16 @@ export default function App() {
                               <span className="font-mono text-[10px] font-bold text-zinc-500 bg-gray-100 px-1.5 py-0.5 rounded">
                                 {prod.codigo_sku}
                               </span>
-                              <span className="text-[10px] text-gray-500">{prod.categoria_vehiculo}</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-gray-500">{prod.categoria_vehiculo}</span>
+                                <button
+                                  onClick={() => setProductoAEditar(prod)}
+                                  className="p-1 text-zinc-400 hover:text-red-600 hover:bg-zinc-100 rounded transition"
+                                  title="Editar producto"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </div>
                             <h4 className="font-bold text-gray-800 text-xs mb-1">{prod.nombre}</h4>
                           </div>
@@ -467,30 +479,90 @@ export default function App() {
                 ))}
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                {inventarioFiltrado.map((prod) => (
-                  <div key={prod.id} className="bg-white rounded-xl border border-gray-200 p-3.5 shadow-sm flex flex-col justify-between">
-                    <div>
-                      <div className="flex justify-between items-start mb-1.5">
-                        <span className="font-mono text-[10px] font-bold text-zinc-500 bg-gray-100 px-1.5 py-0.5 rounded">
-                          {prod.codigo_sku}
-                        </span>
-                        <span className="text-[10px] text-gray-500">{prod.subcategoria}</span>
+              vistaInventario === 'tarjetas' ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {inventarioFiltrado.map((prod) => (
+                    <div key={prod.id} className="bg-white rounded-xl border border-gray-200 p-3.5 shadow-sm flex flex-col justify-between">
+                      <div>
+                        <div className="flex justify-between items-start mb-1.5">
+                          <span className="font-mono text-[10px] font-bold text-zinc-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                            {prod.codigo_sku}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-gray-500">{prod.subcategoria}</span>
+                            <button
+                              onClick={() => setProductoAEditar(prod)}
+                              className="p-1 text-zinc-400 hover:text-red-600 hover:bg-zinc-100 rounded transition"
+                              title="Editar producto"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                        <h4 className="font-bold text-gray-800 text-xs mb-1">{prod.nombre}</h4>
                       </div>
-                      <h4 className="font-bold text-gray-800 text-xs mb-1">{prod.nombre}</h4>
-                    </div>
 
-                    <div className="border-t border-gray-100 pt-2 flex justify-between items-end mt-2">
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                        prod.stock_actual <= prod.stock_minimo ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
-                      }`}>
-                        {prod.stock_actual} u.
-                      </span>
-                      <span className="text-base font-black text-gray-900">${Number(prod.precio_venta).toFixed(2)}</span>
+                      <div className="border-t border-gray-100 pt-2 flex justify-between items-end mt-2">
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                          prod.stock_actual <= prod.stock_minimo ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                        }`}>
+                          {prod.stock_actual} u.
+                        </span>
+                        <span className="text-base font-black text-gray-900">${Number(prod.precio_venta).toFixed(2)}</span>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                  <table className="w-full text-left text-xs text-gray-600">
+                    <thead className="bg-gray-50 text-gray-700 uppercase font-semibold border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-2.5">SKU</th>
+                        <th className="px-4 py-2.5">Descripción</th>
+                        <th className="px-4 py-2.5">Categoría</th>
+                        <th className="px-4 py-2.5">Subcategoría</th>
+                        <th className="px-4 py-2.5 text-center">Stock</th>
+                        <th className="px-4 py-2.5 text-right">P. Venta</th>
+                        <th className="px-4 py-2.5 text-center">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {inventarioFiltrado.map((item: any) => (
+                        <tr key={item.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-2 font-mono text-zinc-500">{item.codigo_sku}</td>
+                          <td className="px-4 py-2 font-medium text-gray-800">{item.nombre}</td>
+                          <td className="px-4 py-2">{item.categoria_vehiculo}</td>
+                          <td className="px-4 py-2 text-zinc-500">{item.subcategoria || '-'}</td>
+                          <td className="px-4 py-2 text-center">
+                            <span
+                              className={`px-2 py-0.5 rounded-full font-bold ${
+                                item.stock_actual <= item.stock_minimo
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-green-100 text-green-700'
+                              }`}
+                            >
+                              {item.tipo === 'Servicio' ? 'N/A' : `${item.stock_actual} u.`}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 text-right font-black text-gray-900">
+                            ${Number(item.precio_venta).toFixed(2)}
+                          </td>
+                          <td className="px-4 py-2 text-center">
+                            <button
+                              onClick={() => setProductoAEditar(item)}
+                              className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-zinc-100 rounded-lg transition"
+                              title="Editar producto"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
             )}
           </div>
         )}
@@ -498,6 +570,7 @@ export default function App() {
         {tab === 'historial' && <HistorialVehiculo />}
       </main>
 
+      {/* Modales */}
       <NuevaOrdenModal
         isOpen={isNuevaOrdenOpen}
         onClose={() => setIsNuevaOrdenOpen(false)}
@@ -515,6 +588,13 @@ export default function App() {
         isOpen={!!ordenSeleccionada}
         onClose={() => setOrdenSeleccionada(null)}
         onOrdenActualizada={handleRefrescarTodo}
+      />
+
+      <EditarProductoModal
+        producto={productoAEditar}
+        isOpen={!!productoAEditar}
+        onClose={() => setProductoAEditar(null)}
+        onProductoActualizado={handleRefrescarTodo}
       />
     </div>
   );
