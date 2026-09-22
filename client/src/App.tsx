@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { 
   ClipboardList, Package, Plus, Search, RefreshCw, Eye, History, 
-  Bike, Wrench, AlertTriangle, LayoutGrid, Table, Layers, Zap, Disc, Fuel, Wind, ShieldAlert
+  Bike, Wrench, AlertTriangle, LayoutGrid, Table, Layers, Zap, Disc, Fuel, Wind
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import NuevaOrdenModal from './components/nuevaOrdenModal';
-import NuevoProductoModal from './components/nuevoProductoModal';
+import NuevoProductoModal from './components/NuevoProductoModal';
 import DetalleOrdenModal from './components/DetalleOrdenModal';
 import HistorialVehiculo from './components/HistorialVehiculo';
 

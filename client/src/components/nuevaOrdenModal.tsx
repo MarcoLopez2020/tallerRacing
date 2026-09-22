@@ -22,7 +22,7 @@ export default function NuevaOrdenModal({ isOpen, onClose, onOrdenCreada }: Nuev
   const [productosDb, setProductosDb] = useState<any[]>([]);
   const [guardando, setGuardando] = useState(false);
 
-  const [numeroOrden, setNumeroOrden] = useState(`OT-2026-${Math.floor(100 + Math.random() * 900)}`);
+  const [numeroOrden] = useState(`OT-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`);
   const [fechaIngreso, setFechaIngreso] = useState(new Date().toISOString().split('T')[0]);
   const [fechaEntrega, setFechaEntrega] = useState('');
 
