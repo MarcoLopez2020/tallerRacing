@@ -4,7 +4,7 @@ import {
   Bike, Wrench, AlertTriangle, LayoutGrid, Table, Layers, Zap, Disc, Fuel, Wind, Menu, X
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
-import NuevaOrdenModal from './components/NuevaOrdenModal';
+import NuevaOrdenModal from './components/nuevaOrdenModal';
 import NuevoProductoModal from './components/NuevoProductoModal';
 import DetalleOrdenModal from './components/DetalleOrdenModal';
 import HistorialVehiculo from './components/HistorialVehiculo';
