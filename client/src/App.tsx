@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { 
   ClipboardList, Package, Plus, Search, RefreshCw, Eye, History, 
-  Bike, Wrench, AlertTriangle, LayoutGrid, Table, Layers, Zap, Disc, Fuel, Wind, Menu, X, Pencil
+  Bike, Wrench, AlertTriangle, LayoutGrid, Table, Layers, Zap, Disc, Fuel, Wind, Menu, X, Pencil, LogOut, ShieldCheck, User
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import NuevaOrdenModal from './components/nuevaOrdenModal';
@@ -9,8 +9,15 @@ import NuevoProductoModal from './components/NuevoProductoModal';
 import DetalleOrdenModal from './components/DetalleOrdenModal';
 import EditarProductoModal from './components/EditarProductoModal';
 import HistorialVehiculo from './components/HistorialVehiculo';
+import LoginModal from './components/LoginModal';
 
 export default function App() {
+  // Estados de autenticación y rol
+  const [session, setSession] = useState<any>(null);
+  const [perfilUsuario, setPerfilUsuario] = useState<{ rol: string; nombre: string } | null>(null);
+  const [comprobandoSesion, setComprobandoSesion] = useState(true);
+
+  // Estados de navegación y filtros
   const [tab, setTab] = useState<'ordenes' | 'inventario' | 'historial'>('ordenes');
   const [menuMovilAbierto, setMenuMovilAbierto] = useState(false);
   const [busqueda, setBusqueda] = useState('');
@@ -19,15 +26,58 @@ export default function App() {
   const [agruparPorSubcat, setAgruparPorSubcat] = useState<boolean>(true);
   const [vistaInventario, setVistaInventario] = useState<'tarjetas' | 'tabla'>('tarjetas');
   
+  // Modales
   const [isNuevaOrdenOpen, setIsNuevaOrdenOpen] = useState(false);
   const [isNuevoProductoOpen, setIsNuevoProductoOpen] = useState(false);
   const [ordenSeleccionada, setOrdenSeleccionada] = useState<any | null>(null);
   const [productoAEditar, setProductoAEditar] = useState<any | null>(null);
 
+  // Datos de Supabase
   const [cargando, setCargando] = useState(true);
   const [ordenes, setOrdenes] = useState<any[]>([]);
   const [inventario, setInventario] = useState<any[]>([]);
 
+  // 1. Escuchar sesión de Supabase
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) cargarPerfil(session.user.id);
+      else setComprobandoSesion(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session) cargarPerfil(session.user.id);
+      else {
+        setPerfilUsuario(null);
+        setComprobandoSesion(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const cargarPerfil = async (userId: string) => {
+    const { data } = await supabase
+      .from('usuarios_perfiles')
+      .select('rol, nombre')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (data) {
+      setPerfilUsuario(data);
+    } else {
+      // Fallback por defecto si no ha insertado el trigger
+      setPerfilUsuario({ rol: 'mecanico', nombre: 'Mecánico Zona Racing' });
+    }
+    setComprobandoSesion(false);
+  };
+
+  const handleCerrarSesion = async () => {
+    await supabase.auth.signOut();
+  };
+
+  // 2. Cargar órdenes e inventario
   const fetchOrdenes = async () => {
     setCargando(true);
     const { data, error } = await supabase
@@ -54,9 +104,11 @@ export default function App() {
   };
 
   useEffect(() => {
-    fetchOrdenes();
-    fetchInventario();
-  }, []);
+    if (session) {
+      fetchOrdenes();
+      fetchInventario();
+    }
+  }, [session]);
 
   const handleRefrescarTodo = () => {
     fetchOrdenes();
@@ -133,23 +185,52 @@ export default function App() {
     setMenuMovilAbierto(false);
   };
 
+  // Bloque de espera inicial
+  if (comprobandoSesion) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center text-white p-4">
+        <Wrench className="w-10 h-10 text-red-600 animate-spin mb-3" />
+        <p className="text-sm font-bold tracking-wider uppercase">Cargando Zona Racing...</p>
+      </div>
+    );
+  }
+
+  // Si no hay usuario autenticado, renderizar Login
+  if (!session) {
+    return <LoginModal onLoginExitoso={() => {}} />;
+  }
+
+  const esAdmin = perfilUsuario?.rol === 'admin';
+
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col md:flex-row print:bg-white font-sans">
       {/* Header móvil */}
       <header className="md:hidden bg-zinc-900 text-white p-4 flex justify-between items-center sticky top-0 z-30 print:hidden">
         <div className="flex items-center gap-2">
           <img src="/logoZona.jpg" alt="Logo" className="w-8 h-8 object-contain rounded bg-zinc-800 p-0.5" />
-          <span className="font-black tracking-wider text-sm">ZONA RACING</span>
+          <div>
+            <span className="font-black tracking-wider text-xs block leading-none">ZONA RACING</span>
+            <span className="text-[9px] text-red-400 font-mono font-bold uppercase">{perfilUsuario?.rol}</span>
+          </div>
         </div>
-        <button
-          onClick={() => setMenuMovilAbierto(!menuMovilAbierto)}
-          className="p-2 text-zinc-300 hover:text-white"
-        >
-          {menuMovilAbierto ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleCerrarSesion}
+            className="p-1.5 text-zinc-400 hover:text-white"
+            title="Cerrar Sesión"
+          >
+            <LogOut className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => setMenuMovilAbierto(!menuMovilAbierto)}
+            className="p-1.5 text-zinc-300 hover:text-white"
+          >
+            {menuMovilAbierto ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
+        </div>
       </header>
 
-      {/* Backdrop */}
+      {/* Backdrop móvil */}
       {menuMovilAbierto && (
         <div 
           onClick={() => setMenuMovilAbierto(false)} 
@@ -157,7 +238,7 @@ export default function App() {
         />
       )}
 
-      {/* Sidebar */}
+      {/* Barra Lateral */}
       <aside className={`
         fixed md:static inset-y-0 left-0 z-40 w-64 bg-zinc-900 text-white flex flex-col print:hidden flex-shrink-0 transition-transform duration-200
         ${menuMovilAbierto ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
@@ -203,9 +284,31 @@ export default function App() {
             Historial por Placa
           </button>
         </nav>
+
+        {/* Perfil y Cierre de Sesión en Sidebar */}
+        <div className="p-4 border-t border-zinc-800 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2.5 overflow-hidden">
+            <div className="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-300">
+              {esAdmin ? <ShieldCheck className="w-4 h-4 text-amber-500" /> : <User className="w-4 h-4 text-blue-400" />}
+            </div>
+            <div className="overflow-hidden">
+              <p className="font-bold text-zinc-200 truncate">{perfilUsuario?.nombre || session.user.email}</p>
+              <span className={`text-[10px] font-mono font-bold uppercase ${esAdmin ? 'text-amber-400' : 'text-blue-400'}`}>
+                {perfilUsuario?.rol || 'mecanico'}
+              </span>
+            </div>
+          </div>
+          <button
+            onClick={handleCerrarSesion}
+            title="Cerrar sesión"
+            className="p-1.5 text-zinc-400 hover:text-red-400 hover:bg-zinc-800 rounded-lg transition"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
       </aside>
 
-      {/* Main Content */}
+      {/* Contenedor Principal */}
       <main className="flex-1 p-4 md:p-8 overflow-y-auto print:p-0">
         {tab === 'ordenes' && (
           <div>
@@ -222,6 +325,7 @@ export default function App() {
                 >
                   <RefreshCw className="w-4 h-4" />
                 </button>
+                {/* Tanto mecánico como admin pueden recepcionar y crear órdenes */}
                 <button
                   onClick={() => setIsNuevaOrdenOpen(true)}
                   className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg font-medium shadow-sm transition cursor-pointer text-sm"
@@ -236,7 +340,7 @@ export default function App() {
               <div className="text-center py-12 text-gray-500 text-sm">Cargando órdenes desde Supabase...</div>
             ) : ordenes.length === 0 ? (
               <div className="bg-white rounded-xl border border-dashed border-gray-300 p-12 text-center text-gray-500 text-sm">
-                No hay órdenes registradas. Haz clic en "Nueva Orden" para crear una.
+                No hay órdenes registradas. Haz clic en "Nueva Orden" para recepcionar una moto o bicicleta.
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -299,14 +403,19 @@ export default function App() {
             <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
               <div>
                 <h2 className="text-xl md:text-2xl font-bold text-gray-800">Inventario y Catálogo ({inventarioFiltrado.length})</h2>
-                <p className="text-gray-500 text-xs md:text-sm">Repuestos organizados por subcategoría</p>
+                <p className="text-gray-500 text-xs md:text-sm">
+                  {esAdmin ? 'Control de existencias y edición de repuestos' : 'Catálogo de repuestos para órdenes de trabajo'}
+                </p>
               </div>
-              <button
-                onClick={() => setIsNuevoProductoOpen(true)}
-                className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-bold text-sm transition shadow-sm cursor-pointer"
-              >
-                <Plus className="w-5 h-5" /> Agregar Repuesto
-              </button>
+              {/* Solo Admin puede agregar nuevos productos al catálogo */}
+              {esAdmin && (
+                <button
+                  onClick={() => setIsNuevoProductoOpen(true)}
+                  className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-bold text-sm transition shadow-sm cursor-pointer"
+                >
+                  <Plus className="w-5 h-5" /> Agregar Repuesto
+                </button>
+              )}
             </div>
 
             {/* Métricas */}
@@ -334,7 +443,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Filtros */}
+            {/* Filtros y Búsqueda */}
             <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-3">
               <div className="flex flex-col sm:flex-row justify-between gap-3">
                 <div className="flex flex-wrap gap-1.5">
@@ -445,13 +554,16 @@ export default function App() {
                               </span>
                               <div className="flex items-center gap-1.5">
                                 <span className="text-[10px] text-gray-500">{prod.categoria_vehiculo}</span>
-                                <button
-                                  onClick={() => setProductoAEditar(prod)}
-                                  className="p-1 text-zinc-400 hover:text-red-600 hover:bg-zinc-100 rounded transition"
-                                  title="Editar producto"
-                                >
-                                  <Pencil className="w-3.5 h-3.5" />
-                                </button>
+                                {/* Botón de lápiz restringido a Admin */}
+                                {esAdmin && (
+                                  <button
+                                    onClick={() => setProductoAEditar(prod)}
+                                    className="p-1 text-zinc-400 hover:text-red-600 hover:bg-zinc-100 rounded transition cursor-pointer"
+                                    title="Editar producto (Admin)"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
                               </div>
                             </div>
                             <h4 className="font-bold text-gray-800 text-xs mb-1">{prod.nombre}</h4>
@@ -490,13 +602,15 @@ export default function App() {
                           </span>
                           <div className="flex items-center gap-1.5">
                             <span className="text-[10px] text-gray-500">{prod.subcategoria}</span>
-                            <button
-                              onClick={() => setProductoAEditar(prod)}
-                              className="p-1 text-zinc-400 hover:text-red-600 hover:bg-zinc-100 rounded transition"
-                              title="Editar producto"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
+                            {esAdmin && (
+                              <button
+                                onClick={() => setProductoAEditar(prod)}
+                                className="p-1 text-zinc-400 hover:text-red-600 hover:bg-zinc-100 rounded transition cursor-pointer"
+                                title="Editar producto (Admin)"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </div>
                         <h4 className="font-bold text-gray-800 text-xs mb-1">{prod.nombre}</h4>
@@ -524,7 +638,7 @@ export default function App() {
                         <th className="px-4 py-2.5">Subcategoría</th>
                         <th className="px-4 py-2.5 text-center">Stock</th>
                         <th className="px-4 py-2.5 text-right">P. Venta</th>
-                        <th className="px-4 py-2.5 text-center">Acciones</th>
+                        {esAdmin && <th className="px-4 py-2.5 text-center">Acciones</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -548,15 +662,17 @@ export default function App() {
                           <td className="px-4 py-2 text-right font-black text-gray-900">
                             ${Number(item.precio_venta).toFixed(2)}
                           </td>
-                          <td className="px-4 py-2 text-center">
-                            <button
-                              onClick={() => setProductoAEditar(item)}
-                              className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-zinc-100 rounded-lg transition"
-                              title="Editar producto"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                          </td>
+                          {esAdmin && (
+                            <td className="px-4 py-2 text-center">
+                              <button
+                                onClick={() => setProductoAEditar(item)}
+                                className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-zinc-100 rounded-lg transition cursor-pointer"
+                                title="Editar producto"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
