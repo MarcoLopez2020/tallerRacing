@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { 
-  ClipboardList, Package, Plus, Search, RefreshCw, Eye, History, 
+import {
+  ClipboardList, Package, Plus, Search, RefreshCw, Eye, History,
   Bike, Wrench, AlertTriangle, LayoutGrid, Table, Layers, Zap, Disc, Fuel, Wind, Menu, X, Pencil, LogOut, ShieldCheck, User
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
@@ -10,6 +10,7 @@ import DetalleOrdenModal from './components/DetalleOrdenModal';
 import EditarProductoModal from './components/EditarProductoModal';
 import HistorialVehiculo from './components/HistorialVehiculo';
 import LoginModal from './components/LoginModal';
+import PortalPublico from './components/PortalPublico';
 
 export default function App() {
   // Estados de autenticación y rol
@@ -25,7 +26,7 @@ export default function App() {
   const [filtroSubcat, setFiltroSubcat] = useState<string>('TODAS');
   const [agruparPorSubcat, setAgruparPorSubcat] = useState<boolean>(true);
   const [vistaInventario, setVistaInventario] = useState<'tarjetas' | 'tabla'>('tarjetas');
-  
+
   // Modales
   const [isNuevaOrdenOpen, setIsNuevaOrdenOpen] = useState(false);
   const [isNuevoProductoOpen, setIsNuevoProductoOpen] = useState(false);
@@ -36,6 +37,9 @@ export default function App() {
   const [cargando, setCargando] = useState(true);
   const [ordenes, setOrdenes] = useState<any[]>([]);
   const [inventario, setInventario] = useState<any[]>([]);
+
+  // Estados de Logs
+  const [mostrarLogin, setMostrarLogin] = useState(false);
 
   // 1. Escuchar sesión de Supabase
   useEffect(() => {
@@ -195,9 +199,24 @@ export default function App() {
     );
   }
 
-  // Si no hay usuario autenticado, renderizar Login
+  // SI NO HAY SESIÓN:
   if (!session) {
-    return <LoginModal onLoginExitoso={() => {}} />;
+    if (mostrarLogin) {
+      return (
+        <div>
+          <div className="bg-zinc-950 px-4 pt-4">
+            <button
+              onClick={() => setMostrarLogin(false)}
+              className="text-xs text-zinc-400 hover:text-white flex items-center gap-1 font-bold cursor-pointer"
+            >
+              ← Volver a la Consulta Pública
+            </button>
+          </div>
+          <LoginModal onLoginExitoso={() => setMostrarLogin(false)} />
+        </div>
+      );
+    }
+    return <PortalPublico onIrALogin={() => setMostrarLogin(true)} />;
   }
 
   const esAdmin = perfilUsuario?.rol === 'admin';
@@ -232,8 +251,8 @@ export default function App() {
 
       {/* Backdrop móvil */}
       {menuMovilAbierto && (
-        <div 
-          onClick={() => setMenuMovilAbierto(false)} 
+        <div
+          onClick={() => setMenuMovilAbierto(false)}
           className="fixed inset-0 bg-black/60 z-30 md:hidden"
         />
       )}
@@ -258,27 +277,24 @@ export default function App() {
         <nav className="flex-1 p-4 space-y-2">
           <button
             onClick={() => cambiarTab('ordenes')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition cursor-pointer ${
-              tab === 'ordenes' ? 'bg-red-600 text-white shadow-md' : 'text-zinc-400 hover:bg-zinc-800'
-            }`}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition cursor-pointer ${tab === 'ordenes' ? 'bg-red-600 text-white shadow-md' : 'text-zinc-400 hover:bg-zinc-800'
+              }`}
           >
             <ClipboardList className="w-5 h-5" />
             Órdenes de Trabajo
           </button>
           <button
             onClick={() => cambiarTab('inventario')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition cursor-pointer ${
-              tab === 'inventario' ? 'bg-red-600 text-white shadow-md' : 'text-zinc-400 hover:bg-zinc-800'
-            }`}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition cursor-pointer ${tab === 'inventario' ? 'bg-red-600 text-white shadow-md' : 'text-zinc-400 hover:bg-zinc-800'
+              }`}
           >
             <Package className="w-5 h-5" />
             Inventario / Catálogo
           </button>
           <button
             onClick={() => cambiarTab('historial')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition cursor-pointer ${
-              tab === 'historial' ? 'bg-red-600 text-white shadow-md' : 'text-zinc-400 hover:bg-zinc-800'
-            }`}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition cursor-pointer ${tab === 'historial' ? 'bg-red-600 text-white shadow-md' : 'text-zinc-400 hover:bg-zinc-800'
+              }`}
           >
             <History className="w-5 h-5" />
             Historial por Placa
@@ -460,9 +476,8 @@ export default function App() {
                         setFiltroTipo(tipo.id);
                         setFiltroSubcat('TODAS');
                       }}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                        filtroTipo === tipo.id ? 'bg-red-600 text-white shadow-sm' : 'bg-gray-100 text-gray-600'
-                      }`}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${filtroTipo === tipo.id ? 'bg-red-600 text-white shadow-sm' : 'bg-gray-100 text-gray-600'
+                        }`}
                     >
                       {tipo.label}
                     </button>
@@ -482,9 +497,8 @@ export default function App() {
                   </div>
                   <button
                     onClick={() => setAgruparPorSubcat(!agruparPorSubcat)}
-                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
-                      agruparPorSubcat ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-700 border-gray-300'
-                    }`}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${agruparPorSubcat ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-700 border-gray-300'
+                      }`}
                     title="Agrupar por Subcategorías"
                   >
                     <Layers className="w-3.5 h-3.5" />
@@ -510,9 +524,8 @@ export default function App() {
               <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-gray-100 text-xs">
                 <button
                   onClick={() => setFiltroSubcat('TODAS')}
-                  className={`px-2.5 py-1 rounded-md text-xs font-semibold ${
-                    filtroSubcat === 'TODAS' ? 'bg-zinc-800 text-white' : 'bg-zinc-100 text-zinc-600'
-                  }`}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold ${filtroSubcat === 'TODAS' ? 'bg-zinc-800 text-white' : 'bg-zinc-100 text-zinc-600'
+                    }`}
                 >
                   Todas ({inventario.length})
                 </button>
@@ -520,9 +533,8 @@ export default function App() {
                   <button
                     key={sub}
                     onClick={() => setFiltroSubcat(sub)}
-                    className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold ${
-                      filtroSubcat === sub ? 'bg-zinc-800 text-white' : 'bg-zinc-100 text-zinc-600'
-                    }`}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold ${filtroSubcat === sub ? 'bg-zinc-800 text-white' : 'bg-zinc-100 text-zinc-600'
+                      }`}
                   >
                     {getSubcatIcon(sub)}
                     <span>{sub}</span>
@@ -575,9 +587,8 @@ export default function App() {
                               {prod.tipo === 'Servicio' ? (
                                 <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Servicio</span>
                               ) : (
-                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                                  prod.stock_actual <= prod.stock_minimo ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
-                                }`}>
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${prod.stock_actual <= prod.stock_minimo ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                                  }`}>
                                   {prod.stock_actual} u.
                                 </span>
                               )}
@@ -617,9 +628,8 @@ export default function App() {
                       </div>
 
                       <div className="border-t border-gray-100 pt-2 flex justify-between items-end mt-2">
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                          prod.stock_actual <= prod.stock_minimo ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
-                        }`}>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${prod.stock_actual <= prod.stock_minimo ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                          }`}>
                           {prod.stock_actual} u.
                         </span>
                         <span className="text-base font-black text-gray-900">${Number(prod.precio_venta).toFixed(2)}</span>
@@ -650,11 +660,10 @@ export default function App() {
                           <td className="px-4 py-2 text-zinc-500">{item.subcategoria || '-'}</td>
                           <td className="px-4 py-2 text-center">
                             <span
-                              className={`px-2 py-0.5 rounded-full font-bold ${
-                                item.stock_actual <= item.stock_minimo
+                              className={`px-2 py-0.5 rounded-full font-bold ${item.stock_actual <= item.stock_minimo
                                   ? 'bg-red-100 text-red-700'
                                   : 'bg-green-100 text-green-700'
-                              }`}
+                                }`}
                             >
                               {item.tipo === 'Servicio' ? 'N/A' : `${item.stock_actual} u.`}
                             </span>
