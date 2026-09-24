@@ -39,33 +39,33 @@ export default function FichaImprimible({ orden, detalles }: FichaImprimibleProp
         <p><span className="font-bold">Fecha Entrega Estimada:</span> {orden.fecha_entrega_estimada || 'Por coordinar'}</p>
       </div>
 
-      {/* 1. Datos del Cliente */}
+{/* 1. Datos del Cliente */}
       <div className="border border-gray-400 rounded p-2.5 mb-2.5">
         <h2 className="font-black text-[10px] uppercase bg-gray-100 p-1 mb-1.5 border-b border-gray-300">
           1. Datos del Cliente
         </h2>
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
-          <p><span className="font-bold">Nombre / Razón Social:</span> {orden.cliente?.nombre_completo}</p>
-          <p><span className="font-bold">Cédula / RUC:</span> {orden.cliente?.num_documento || 'S/N'}</p>
-          <p><span className="font-bold">Teléfono:</span> {orden.cliente?.telefono}</p>
+          <p><span className="font-bold">Nombre / Razón Social:</span> {orden.cliente?.nombre_completo || orden.cliente?.nombre || 'S/N'}</p>
+          <p><span className="font-bold">Cédula / RUC:</span> {orden.cliente?.num_documento || orden.cliente?.cedula || orden.cliente?.ruc || 'S/N'}</p>
+          <p><span className="font-bold">Teléfono:</span> {orden.cliente?.telefono || 'S/N'}</p>
           <p><span className="font-bold">Ciudad:</span> {orden.cliente?.ciudad || 'Patate'}</p>
           <p><span className="font-bold">Dirección:</span> {orden.cliente?.direccion || 'N/A'}</p>
-          <p><span className="font-bold">Contacto Emergencia:</span> {orden.cliente?.contacto_emergencia || 'N/A'}</p>
+          <p><span className="font-bold">Contacto Emergencia:</span> {orden.cliente?.contacto_emergencia || orden.cliente?.telefono_emergencia || 'N/A'}</p>
         </div>
       </div>
 
       {/* 2. Datos del Vehículo */}
       <div className="border border-gray-400 rounded p-2.5 mb-2.5">
         <h2 className="font-black text-[10px] uppercase bg-gray-100 p-1 mb-1.5 border-b border-gray-300">
-          2. Datos del Vehículo ({orden.vehiculo?.tipo_vehiculo})
+          2. Datos del Vehículo ({orden.vehiculo?.tipo_vehiculo || 'Vehículo'})
         </h2>
         <div className="grid grid-cols-3 gap-x-4 gap-y-1 text-[11px]">
-          <p><span className="font-bold">Marca:</span> {orden.vehiculo?.marca}</p>
-          <p><span className="font-bold">Modelo:</span> {orden.vehiculo?.modelo}</p>
-          <p><span className="font-bold">Año:</span> {orden.vehiculo?.anio || 'N/A'}</p>
+          <p><span className="font-bold">Marca:</span> {orden.vehiculo?.marca || 'N/A'}</p>
+          <p><span className="font-bold">Modelo:</span> {orden.vehiculo?.modelo || 'N/A'}</p>
+          <p><span className="font-bold">Año:</span> {orden.vehiculo?.anio || orden.vehiculo?.año || 'N/A'}</p>
           <p><span className="font-bold">Color:</span> {orden.vehiculo?.color || 'N/A'}</p>
-          <p><span className="font-bold">Placa / Serie:</span> {orden.vehiculo?.identificador}</p>
-          <p><span className="font-bold">Kilometraje / Uso:</span> {orden.vehiculo?.kilometraje_actual || 'N/A'}</p>
+          <p><span className="font-bold">Placa / Serie:</span> {orden.vehiculo?.identificador || orden.vehiculo?.placa || 'N/A'}</p>
+          <p><span className="font-bold">Kilometraje / Uso:</span> {orden.vehiculo?.kilometraje_actual || orden.vehiculo?.kilometraje || orden.kilometraje_ingreso || 'N/A'}</p>
         </div>
       </div>
 
