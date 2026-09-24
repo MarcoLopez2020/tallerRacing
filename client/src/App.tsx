@@ -11,6 +11,8 @@ import EditarProductoModal from './components/EditarProductoModal';
 import HistorialVehiculo from './components/HistorialVehiculo';
 import LoginModal from './components/LoginModal';
 import PortalPublico from './components/PortalPublico';
+import { FileText } from 'lucide-react';
+import FichaEnBlancoImprimible from './components/FichaEnBlancoImprimible';
 
 export default function App() {
   // Estados de autenticación y rol
@@ -40,6 +42,18 @@ export default function App() {
 
   // Estados de Logs
   const [mostrarLogin, setMostrarLogin] = useState(false);
+
+  // Estado y función para imprimir en blanco
+  const [imprimiendoBlanco, setImprimiendoBlanco] = useState(false);
+
+  const handleImprimirHojaBlanco = () => {
+    setImprimiendoBlanco(true);
+    // Damos 100ms para que React monte el componente en el DOM antes de disparar la ventana de impresión
+    setTimeout(() => {
+      window.print();
+      setImprimiendoBlanco(false);
+    }, 100);
+  };
 
   // 1. Escuchar sesión de Supabase
   useEffect(() => {
@@ -87,10 +101,11 @@ export default function App() {
     const { data, error } = await supabase
       .from('ordenes_trabajo')
       .select(`
-        *,
-        cliente:clientes(nombre_completo, telefono, ciudad),
-        vehiculo:vehiculos(tipo_vehiculo, marca, modelo, color, identificador)
-      `)
+      *,
+      cliente:clientes(*),
+      vehiculo:vehiculos(*),
+      orden_detalles(*)
+    `)
       .order('created_at', { ascending: false });
 
     if (!error && data) setOrdenes(data);
@@ -324,7 +339,7 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Contenedor Principal */}
+{/* Contenedor Principal */}
       <main className="flex-1 p-4 md:p-8 overflow-y-auto print:p-0">
         {tab === 'ordenes' && (
           <div>
@@ -333,7 +348,7 @@ export default function App() {
                 <h2 className="text-xl md:text-2xl font-bold text-gray-800">Órdenes de Trabajo</h2>
                 <p className="text-gray-500 text-xs md:text-sm">Control de recepciones y mantenimientos en taller</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap sm:flex-nowrap gap-2">
                 <button
                   onClick={handleRefrescarTodo}
                   className="p-2.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 cursor-pointer bg-white"
@@ -341,6 +356,18 @@ export default function App() {
                 >
                   <RefreshCw className="w-4 h-4" />
                 </button>
+
+                {/* BOTÓN: Hoja en Blanco para imprimir */}
+                <button
+                  type="button"
+                  onClick={handleImprimirHojaBlanco}
+                  className="flex items-center justify-center gap-1.5 bg-zinc-800 hover:bg-zinc-900 text-white px-3 py-2.5 rounded-lg font-medium shadow-sm transition cursor-pointer text-xs md:text-sm border border-zinc-700"
+                  title="Imprimir hoja vacía para recepción manual"
+                >
+                  <FileText className="w-4 h-4 text-red-500" />
+                  <span>Hoja en Blanco</span>
+                </button>
+
                 {/* Tanto mecánico como admin pueden recepcionar y crear órdenes */}
                 <button
                   onClick={() => setIsNuevaOrdenOpen(true)}
@@ -661,8 +688,8 @@ export default function App() {
                           <td className="px-4 py-2 text-center">
                             <span
                               className={`px-2 py-0.5 rounded-full font-bold ${item.stock_actual <= item.stock_minimo
-                                  ? 'bg-red-100 text-red-700'
-                                  : 'bg-green-100 text-green-700'
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-green-100 text-green-700'
                                 }`}
                             >
                               {item.tipo === 'Servicio' ? 'N/A' : `${item.stock_actual} u.`}
@@ -715,12 +742,15 @@ export default function App() {
         onOrdenActualizada={handleRefrescarTodo}
       />
 
-      <EditarProductoModal
+<EditarProductoModal
         producto={productoAEditar}
         isOpen={!!productoAEditar}
         onClose={() => setProductoAEditar(null)}
         onProductoActualizado={handleRefrescarTodo}
       />
+
+      {/* Componente imprimible montado condicionalmente */}
+      {imprimiendoBlanco && <FichaEnBlancoImprimible />}
     </div>
   );
 }

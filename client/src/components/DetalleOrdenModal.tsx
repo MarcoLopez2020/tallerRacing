@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, CheckCircle, Clock, Truck, Save, Printer } from 'lucide-react';
+import { X, Trash2, Plus, Printer, CheckCircle, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import FichaImprimible from './FichaImprimible';
 
@@ -10,208 +10,401 @@ interface DetalleOrdenModalProps {
   onOrdenActualizada: () => void;
 }
 
-export default function DetalleOrdenModal({ orden, isOpen, onClose, onOrdenActualizada }: DetalleOrdenModalProps) {
-  const [detalles, setDetalles] = useState<any[]>([]);
-  const [estado, setEstado] = useState(orden?.estado || 'Pendiente');
-  const [abono, setAbono] = useState<number>(Number(orden?.abono || 0));
-  const [guardando, setGuardando] = useState(false);
-
-  useEffect(() => {
-    if (orden && isOpen) {
-      setEstado(orden.estado);
-      setAbono(Number(orden.abono || 0));
-
-      supabase
-        .from('orden_detalles')
-        .select('*')
-        .eq('orden_id', orden.id)
-        .then(({ data, error }) => {
-          if (!error && data) setDetalles(data);
-        });
-    }
-  }, [orden, isOpen]);
-
+export default function DetalleOrdenModal({
+  orden,
+  isOpen,
+  onClose,
+  onOrdenActualizada,
+}: DetalleOrdenModalProps) {
   if (!isOpen || !orden) return null;
 
-  const total = Number(orden.total || 0);
-  const saldoPendiente = Math.max(0, total - Number(abono));
+  const [detalles, setDetalles] = useState<any[]>([]);
+  const [productosDisponibles, setProductosDisponibles] = useState<any[]>([]);
+  const [productoSeleccionadoId, setProductoSeleccionadoId] = useState('');
+  const [cantidadNueva, setCantidadNueva] = useState(1);
+  const [estadoActual, setEstadoActual] = useState(orden.estado);
+  const [abonoActual, setAbonoActual] = useState(Number(orden.abono || 0));
+  const [cargando, setCargando] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
-  const handleGuardarCambios = async () => {
-    setGuardando(true);
+  // 1. Cargar detalles frescos y catálogo
+  const cargarDetalles = async () => {
+    const { data, error } = await supabase
+      .from('orden_detalles')
+      .select('*')
+      .eq('orden_id', orden.id);
+
+    if (!error && data) {
+      setDetalles(data);
+    }
+  };
+
+  const cargarProductos = async () => {
+    const { data } = await supabase
+      .from('productos')
+      .select('*')
+      .order('nombre', { ascending: true });
+    if (data) setProductosDisponibles(data);
+  };
+
+  useEffect(() => {
+    if (orden) {
+      setEstadoActual(orden.estado);
+      setAbonoActual(Number(orden.abono || 0));
+      cargarDetalles();
+      cargarProductos();
+    }
+  }, [orden]);
+
+  // 2. Recalcular totales en ordenes_trabajo
+  const recalcularTotalesOrden = async (items: any[], nuevoAbono?: number) => {
+    let repuestos = 0;
+    let manoObra = 0;
+
+    items.forEach((item) => {
+      const sub = Number(item.subtotal || 0);
+      if (item.tipo === 'Servicio') {
+        manoObra += sub;
+      } else {
+        repuestos += sub;
+      }
+    });
+
+    const totalGeneral = repuestos + manoObra;
+    const abonoUsado = nuevoAbono !== undefined ? nuevoAbono : abonoActual;
+    const nuevoSaldo = Math.max(0, totalGeneral - abonoUsado);
+
+    await supabase
+      .from('ordenes_trabajo')
+      .update({
+        total_repuestos: repuestos,
+        total_mano_obra: manoObra,
+        total: totalGeneral,
+        abono: abonoUsado,
+        saldo: nuevoSaldo,
+      })
+      .eq('id', orden.id);
+
+    onOrdenActualizada();
+  };
+
+  // 3. Agregar un repuesto o mano de obra a la orden ya creada
+  const handleAgregarItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!productoSeleccionadoId) return;
+
+    const prod = productosDisponibles.find((p) => p.id === productoSeleccionadoId);
+    if (!prod) return;
+
+    setCargando(true);
+    setErrorMsg('');
+
     try {
-      const { error } = await supabase
+      const precioU = Number(prod.precio_venta || 0);
+      const subtotalItem = precioU * cantidadNueva;
+
+      // Si es un repuesto físico, validar stock
+      if (prod.tipo === 'Producto') {
+        if (prod.stock_actual < cantidadNueva) {
+          throw new Error(`Stock insuficiente. Solo quedan ${prod.stock_actual} unidades.`);
+        }
+
+        // Descontar del inventario
+        await supabase
+          .from('productos')
+          .update({ stock_actual: prod.stock_actual - cantidadNueva })
+          .eq('id', prod.id);
+      }
+
+      // Insertar en orden_detalles
+      const { data: nuevoDetalle, error: errInsert } = await supabase
+        .from('orden_detalles')
+        .insert({
+          orden_id: orden.id,
+          producto_id: prod.id,
+          descripcion: prod.nombre,
+          tipo: prod.tipo,
+          cantidad: cantidadNueva,
+          precio_unitario: precioU,
+          subtotal: subtotalItem,
+        })
+        .select()
+        .single();
+
+      if (errInsert) throw errInsert;
+
+      const nuevosItems = [...detalles, nuevoDetalle];
+      setDetalles(nuevosItems);
+      await recalcularTotalesOrden(nuevosItems);
+
+      // Limpiar selección
+      setProductoSeleccionadoId('');
+      setCantidadNueva(1);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Error agregando ítem');
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  // 4. Borrar un ítem de la orden ya creada
+  const handleBorrarItem = async (detalleId: string, productoId: string | null, cantidad: number, tipo: string) => {
+    if (!confirm('¿Desea eliminar este ítem de la orden?')) return;
+
+    setCargando(true);
+    setErrorMsg('');
+
+    try {
+      // Si era un repuesto físico, devolver existencias al inventario
+      if (tipo === 'Producto' && productoId) {
+        const prod = productosDisponibles.find((p) => p.id === productoId);
+        if (prod) {
+          await supabase
+            .from('productos')
+            .update({ stock_actual: prod.stock_actual + cantidad })
+            .eq('id', productoId);
+        }
+      }
+
+      // Eliminar de orden_detalles
+      const { error: errDel } = await supabase
+        .from('orden_detalles')
+        .delete()
+        .eq('id', detalleId);
+
+      if (errDel) throw errDel;
+
+      const itemsRestantes = detalles.filter((d) => d.id !== detalleId);
+      setDetalles(itemsRestantes);
+      await recalcularTotalesOrden(itemsRestantes);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Error eliminando el ítem');
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  // 5. Cambiar Estado o Abono
+  const handleGuardarCambiosGenerales = async () => {
+    setCargando(true);
+    try {
+      await recalcularTotalesOrden(detalles, abonoActual);
+      await supabase
         .from('ordenes_trabajo')
         .update({
-          estado,
-          abono: Number(abono),
-          saldo: saldoPendiente,
+          estado: estadoActual,
+          abono: abonoActual,
         })
         .eq('id', orden.id);
 
-      if (error) throw error;
-
       onOrdenActualizada();
-      onClose();
+      alert('Orden actualizada con éxito');
     } catch (err: any) {
-      alert('Error actualizando la orden: ' + err.message);
+      setErrorMsg(err.message || 'Error al actualizar orden');
     } finally {
-      setGuardando(false);
+      setCargando(false);
     }
   };
 
-  const handleImprimir = () => {
-    window.print();
-  };
+  const totalCalculado = detalles.reduce((acc, curr) => acc + Number(curr.subtotal || 0), 0);
+  const saldoCalculado = Math.max(0, totalCalculado - abonoActual);
 
   return (
-    <>
-      <FichaImprimible orden={orden} detalles={detalles} />
-
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
-        <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl max-h-[90vh] flex flex-col overflow-hidden">
-          <div className="bg-zinc-900 text-white p-5 flex justify-between items-center">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 md:p-6 overflow-y-auto">
+      {/* Corregido */}
+      <div className="hidden print:block">
+        <FichaImprimible
+          orden={{ ...orden, total: totalCalculado, saldo: saldoCalculado, abono: abonoActual, estado: estadoActual }}
+          detalles={detalles}
+        />
+      </div>
+      <div className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden print:hidden my-auto">
+        {/* Cabecera Modal */}
+        <div className="bg-zinc-900 text-white px-5 py-4 flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-sm font-black bg-red-600 px-2.5 py-1 rounded">
+              {orden.numero_orden}
+            </span>
             <div>
-              <div className="flex items-center gap-3">
-                <span className="bg-red-600 px-2.5 py-1 rounded text-xs font-black">
-                  {orden.numero_orden}
-                </span>
-                <h2 className="text-lg font-bold">Gestión de Orden de Trabajo</h2>
-              </div>
-              <p className="text-xs text-zinc-400 mt-1">
-                Ingreso: {orden.fecha_ingreso} | Entrega Est.: {orden.fecha_entrega_estimada || 'No definida'}
+              <h3 className="font-bold text-sm md:text-base leading-tight">
+                {orden.cliente?.nombre_completo || 'Cliente'}
+              </h3>
+              <p className="text-xs text-zinc-400">
+                {orden.vehiculo?.marca} {orden.vehiculo?.modelo} • Placa: {orden.vehiculo?.identificador}
               </p>
             </div>
-            <button onClick={onClose} className="text-zinc-400 hover:text-white cursor-pointer">
-              <X className="w-6 h-6" />
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => window.print()}
+              className="flex items-center gap-1 bg-zinc-800 hover:bg-zinc-700 text-xs px-3 py-1.5 rounded-lg border border-zinc-700 transition cursor-pointer"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              Imprimir
+            </button>
+            <button onClick={onClose} className="p-1 text-zinc-400 hover:text-white">
+              <X className="w-5 h-5" />
             </button>
           </div>
+        </div>
 
-          <div className="p-6 overflow-y-auto flex-1 space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-xl border border-gray-200 text-sm">
-              <div>
-                <p className="text-xs font-bold text-gray-500 uppercase">Cliente</p>
-                <p className="font-semibold text-gray-800">{orden.cliente?.nombre_completo}</p>
-                <p className="text-xs text-gray-600">Tel: {orden.cliente?.telefono} • {orden.cliente?.ciudad}</p>
-              </div>
-              <div>
-                <p className="text-xs font-bold text-gray-500 uppercase">Vehículo ({orden.vehiculo?.tipo_vehiculo})</p>
-                <p className="font-semibold text-gray-800">{orden.vehiculo?.marca} {orden.vehiculo?.modelo} - {orden.vehiculo?.color}</p>
-                <p className="text-xs text-gray-600">Placa/Serie: {orden.vehiculo?.identificador}</p>
-              </div>
+        <div className="p-5 space-y-5 max-h-[80vh] overflow-y-auto">
+          {errorMsg && (
+            <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-center gap-2">
+             <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{errorMsg}</span>
             </div>
+          )}
 
-            <div className="border border-gray-200 rounded-xl p-4">
-              <label className="block text-xs font-bold text-gray-700 uppercase mb-2">Estado del Mantenimiento</label>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                {[
-                  { label: 'Pendiente', val: 'Pendiente', icon: Clock, color: 'border-yellow-400 bg-yellow-50 text-yellow-800' },
-                  { label: 'En Proceso', val: 'En Proceso', icon: Clock, color: 'border-blue-400 bg-blue-50 text-blue-800' },
-                  { label: 'Terminado', val: 'Terminado', icon: CheckCircle, color: 'border-emerald-400 bg-emerald-50 text-emerald-800' },
-                  { label: 'Entregado', val: 'Entregado', icon: Truck, color: 'border-zinc-400 bg-zinc-100 text-zinc-800' },
-                ].map((est) => {
-                  const IconComponent = est.icon;
-                  const isSelected = estado === est.val;
-                  return (
-                    <button
-                      key={est.val}
-                      type="button"
-                      onClick={() => setEstado(est.val)}
-                      className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg border text-xs font-bold transition cursor-pointer ${
-                        isSelected ? est.color + ' ring-2 ring-red-500 shadow-sm' : 'border-gray-200 bg-white text-gray-600'
-                      }`}
-                    >
-                      <IconComponent className="w-3.5 h-3.5" />
-                      {est.label}
-                    </button>
-                  );
-                })}
-              </div>
+          {/* Formulario para agregar repuesto o mano de obra adicional */}
+          <form onSubmit={handleAgregarItem} className="bg-zinc-50 p-3.5 rounded-xl border border-zinc-200">
+            <label className="text-xs font-bold text-zinc-700 block mb-2 uppercase">
+              Agregar Repuesto o Servicio a esta Orden
+            </label>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <select
+                value={productoSeleccionadoId}
+                onChange={(e) => setProductoSeleccionadoId(e.target.value)}
+                className="flex-1 text-xs border border-zinc-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
+              >
+                <option value="">Seleccione repuesto o mano de obra...</option>
+                {productosDisponibles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    [{p.tipo === 'Servicio' ? 'SERVICIO' : `STOCK: ${p.stock_actual}`}] {p.nombre} - ${Number(p.precio_venta).toFixed(2)}
+                  </option>
+                ))}
+              </select>
+
+              <input
+                type="number"
+                min="1"
+                value={cantidadNueva}
+                onChange={(e) => setCantidadNueva(Math.max(1, Number(e.target.value)))}
+                className="w-20 text-xs border border-zinc-300 rounded-lg p-2 bg-white text-center font-bold"
+              />
+
+              <button
+                type="submit"
+                disabled={cargando || !productoSeleccionadoId}
+                className="flex items-center justify-center gap-1 bg-zinc-900 hover:bg-black text-white text-xs font-bold px-4 py-2 rounded-lg transition disabled:opacity-50 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Agregar
+              </button>
             </div>
+          </form>
 
-            <div className="border border-gray-200 rounded-xl p-4">
-              <h4 className="text-xs font-bold text-gray-700 uppercase mb-3">Trabajos y Repuestos Realizados</h4>
-              <div className="overflow-x-auto">
+          {/* Listado de Ítems actuales */}
+          <div>
+            <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">
+              Repuestos y Servicios Cargados ({detalles.length})
+            </h4>
+            {detalles.length === 0 ? (
+              <p className="text-xs text-zinc-400 italic">No hay ítems registrados en esta orden aún.</p>
+            ) : (
+              <div className="border border-zinc-200 rounded-xl overflow-hidden">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-gray-50 text-gray-500 uppercase border-b">
+                  <thead className="bg-zinc-100 text-zinc-700 uppercase font-semibold">
                     <tr>
-                      <th className="p-2">Tipo</th>
-                      <th className="p-2">Descripción</th>
-                      <th className="p-2 text-center">Cant.</th>
-                      <th className="p-2 text-right">V. Unit</th>
-                      <th className="p-2 text-right">Subtotal</th>
+                      <th className="p-2.5">Descripción</th>
+                      <th className="p-2.5 text-center">Cant.</th>
+                      <th className="p-2.5 text-right">P. Unit</th>
+                      <th className="p-2.5 text-right">Subtotal</th>
+                      <th className="p-2.5 text-center">Acción</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {detalles.map((d) => (
-                      <tr key={d.id}>
-                        <td className="p-2">
-                          <span className={`px-1.5 py-0.5 rounded font-semibold ${d.es_repuesto ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-700'}`}>
-                            {d.es_repuesto ? 'Repuesto' : 'Mano Obra'}
-                          </span>
+                  <tbody className="divide-y divide-zinc-100">
+                    {detalles.map((item) => (
+                      <tr key={item.id} className="hover:bg-zinc-50">
+                        <td className="p-2.5 font-medium text-zinc-800">
+                          {item.descripcion}
+                          <span className="text-[10px] text-zinc-400 block">{item.tipo}</span>
                         </td>
-                        <td className="p-2 font-medium text-gray-800">{d.descripcion}</td>
-                        <td className="p-2 text-center">{d.cantidad}</td>
-                        <td className="p-2 text-right">${Number(d.precio_unitario).toFixed(2)}</td>
-                        <td className="p-2 text-right font-bold text-gray-800">${Number(d.subtotal).toFixed(2)}</td>
+                        <td className="p-2.5 text-center font-bold">{item.cantidad}</td>
+                        <td className="p-2.5 text-right font-mono">${Number(item.precio_unitario).toFixed(2)}</td>
+                        <td className="p-2.5 text-right font-mono font-bold text-zinc-900">
+                          ${Number(item.subtotal).toFixed(2)}
+                        </td>
+                        <td className="p-2.5 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleBorrarItem(item.id, item.producto_id, item.cantidad, item.tipo)}
+                            className="p-1 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded transition cursor-pointer"
+                            title="Eliminar ítem"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+            )}
+          </div>
+
+          {/* Control de Estado, Abono y Saldos */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-zinc-50 p-4 rounded-xl border border-zinc-200">
+            <div>
+              <label className="text-[11px] font-bold text-zinc-600 block mb-1">Estado de la Orden</label>
+              <select
+                value={estadoActual}
+                onChange={(e) => setEstadoActual(e.target.value)}
+                className="w-full text-xs font-bold border border-zinc-300 rounded-lg p-2 bg-white"
+              >
+                <option value="Pendiente">Pendiente</option>
+                <option value="En Proceso">En Proceso</option>
+                <option value="Terminado">Terminado</option>
+                <option value="Entregado">Entregado</option>
+              </select>
             </div>
 
-            <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
-              <button
-                type="button"
-                onClick={handleImprimir}
-                className="flex items-center gap-2 text-xs font-bold text-gray-700 bg-white border border-gray-300 px-3 py-2 rounded-lg hover:bg-gray-100 cursor-pointer"
-              >
-                <Printer className="w-4 h-4" /> Imprimir Ficha Oficial
-              </button>
-
-              <div className="w-full md:w-64 space-y-1.5 text-xs">
-                <div className="flex justify-between text-gray-600">
-                  <span>Total Facturado:</span>
-                  <span className="font-bold text-gray-800">${total.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between items-center text-gray-600">
-                  <span>Abono Actualizado:</span>
-                  <input
-                    type="number"
-                    step="0.50"
-                    value={abono}
-                    onChange={(e) => setAbono(Number(e.target.value))}
-                    className="w-20 border border-gray-300 rounded p-1 text-right text-xs bg-white font-bold text-emerald-700 focus:outline-none"
-                  />
-                </div>
-                <div className="flex justify-between border-t border-gray-200 pt-1 text-sm font-black text-red-600">
-                  <span>Saldo por Cobrar:</span>
-                  <span>${saldoPendiente.toFixed(2)}</span>
-                </div>
-              </div>
+            <div>
+              <label className="text-[11px] font-bold text-zinc-600 block mb-1">Abono del Cliente ($)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={abonoActual}
+                onChange={(e) => setAbonoActual(Math.max(0, Number(e.target.value)))}
+                className="w-full text-xs font-bold border border-zinc-300 rounded-lg p-2 bg-white"
+              />
             </div>
           </div>
 
-          <div className="p-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-200 rounded-lg cursor-pointer"
-            >
-              Cerrar
-            </button>
-            <button
-              type="button"
-              onClick={handleGuardarCambios}
-              disabled={guardando}
-              className="flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg shadow-sm transition disabled:opacity-50 cursor-pointer"
-            >
-              <Save className="w-4 h-4" />
-              {guardando ? 'Guardando...' : 'Guardar Cambios'}
-            </button>
+          {/* Resumen Total */}
+          <div className="flex justify-between items-center bg-zinc-900 text-white p-4 rounded-xl">
+            <div>
+              <span className="text-[11px] text-zinc-400 block">Total Liquidación</span>
+              <span className="text-xl font-black font-mono">${totalCalculado.toFixed(2)}</span>
+            </div>
+            <div className="text-right">
+              <span className="text-[11px] text-zinc-400 block">Saldo por Cobrar</span>
+              <span className="text-xl font-black font-mono text-red-400">${saldoCalculado.toFixed(2)}</span>
+            </div>
           </div>
         </div>
+
+        {/* Footer Modal */}
+        <div className="bg-zinc-100 px-5 py-3 flex justify-end gap-2 border-t border-zinc-200">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-xs font-semibold text-zinc-600 hover:bg-zinc-200 rounded-lg transition"
+          >
+            Cerrar
+          </button>
+          <button
+            type="button"
+            onClick={handleGuardarCambiosGenerales}
+            disabled={cargando}
+            className="flex items-center gap-1 px-4 py-2 text-xs font-bold bg-red-600 hover:bg-red-700 text-white rounded-lg transition disabled:opacity-50"
+          >
+            <CheckCircle className="w-3.5 h-3.5" />
+            {cargando ? 'Actualizando...' : 'Guardar Estado y Totales'}
+          </button>
+        </div>
       </div>
-    </>
+    </div>
   );
 }
