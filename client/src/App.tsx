@@ -48,11 +48,11 @@ export default function App() {
 
   const handleImprimirHojaBlanco = () => {
     setImprimiendoBlanco(true);
-    // Damos 100ms para que React monte el componente en el DOM antes de disparar la ventana de impresión
     setTimeout(() => {
       window.print();
-      setImprimiendoBlanco(false);
-    }, 100);
+      // Opcional: no restablecer de inmediato para dar tiempo a que el navegador genere la vista previa
+      setTimeout(() => setImprimiendoBlanco(false), 500);
+    }, 200);
   };
 
   // 1. Escuchar sesión de Supabase
@@ -339,7 +339,7 @@ export default function App() {
         </div>
       </aside>
 
-{/* Contenedor Principal */}
+      {/* Contenedor Principal */}
       <main className="flex-1 p-4 md:p-8 overflow-y-auto print:p-0">
         {tab === 'ordenes' && (
           <div>
@@ -742,7 +742,7 @@ export default function App() {
         onOrdenActualizada={handleRefrescarTodo}
       />
 
-<EditarProductoModal
+      <EditarProductoModal
         producto={productoAEditar}
         isOpen={!!productoAEditar}
         onClose={() => setProductoAEditar(null)}
